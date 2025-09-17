@@ -1,0 +1,451 @@
+{% extends 'index.html' %} 
+{% block content %} 
+{% load i18n %}
+{% load static %}
+<style>
+    .oh-sticky-table__right {
+        position: sticky;
+        right: 0;
+        background-color: #fff;
+    }
+
+    .oh-sticky-table__top {
+        z-index: 12 !important;
+        top: 0;
+    }
+    
+    /* Enhanced UI styling matching Allowances module */
+    .statutory-compliance-card {
+        background: #ffffff;
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        transition: all 0.3s ease;
+        margin-bottom: 20px;
+        overflow: hidden;
+        position: relative;
+    }
+    
+    .statutory-compliance-card:hover {
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+        transform: translateY(-2px);
+    }
+    
+    .compliance-card-header {
+        padding: 20px;
+        border-bottom: 1px solid #f3f4f6;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: #fafbfc;
+    }
+    
+    .employee-info {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+    
+    .employee-avatar {
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        overflow: hidden;
+        border: 2px solid #e5e7eb;
+    }
+    
+    .avatar-img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+    
+    .employee-details h5 {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 600;
+        color: #1f2937;
+    }
+    
+    .employee-details p {
+        margin: 4px 0 0 0;
+        font-size: 14px;
+        color: #6b7280;
+    }
+    
+    .card-actions {
+        position: relative;
+    }
+    
+    .action-menu-btn {
+        background: none;
+        border: none;
+        padding: 8px;
+        border-radius: 6px;
+        cursor: pointer;
+        color: #6b7280;
+        transition: all 0.2s ease;
+    }
+    
+    .action-menu-btn:hover {
+        background: #f3f4f6;
+        color: #374151;
+    }
+    
+    .action-menu {
+        position: absolute;
+        top: 100%;
+        right: 0;
+        background: white;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        min-width: 150px;
+        z-index: 10;
+        display: none;
+    }
+    
+    .action-menu.show {
+        display: block;
+    }
+    
+    .menu-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 12px 16px;
+        color: #374151;
+        text-decoration: none;
+        transition: background-color 0.2s ease;
+    }
+    
+    .menu-item:hover {
+        background: #f9fafb;
+    }
+    
+    .menu-item.delete-item {
+        color: #dc2626;
+    }
+    
+    .menu-item.delete-item:hover {
+        background: #fef2f2;
+    }
+    
+    .compliance-card-body {
+        padding: 20px;
+    }
+    
+    .compliance-item {
+        display: flex;
+        align-items: flex-start;
+        gap: 16px;
+        margin-bottom: 20px;
+        padding: 16px;
+        background: #f8fafc;
+        border-radius: 8px;
+        border-left: 4px solid #3b82f6;
+    }
+    
+    .compliance-item:last-child {
+        margin-bottom: 0;
+    }
+    
+    .compliance-icon {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 18px;
+        color: white;
+        flex-shrink: 0;
+    }
+    
+    .pf-icon {
+        background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+    }
+    
+    .esi-icon {
+        background: linear-gradient(135deg, #10b981, #059669);
+    }
+    
+    .pt-icon {
+        background: linear-gradient(135deg, #f59e0b, #d97706);
+    }
+    
+    .lwf-icon {
+        background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+    }
+    
+    .compliance-details {
+        flex: 1;
+    }
+    
+    .compliance-title {
+        margin: 0 0 12px 0;
+        font-size: 16px;
+        font-weight: 600;
+        color: #1f2937;
+    }
+    
+    .compliance-fields {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+    
+    .field-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 4px 0;
+    }
+    
+    .field-label {
+        font-weight: 500;
+        color: #6b7280;
+        font-size: 14px;
+    }
+    
+    .field-value {
+        color: #1f2937;
+        font-weight: 500;
+        font-size: 14px;
+    }
+    
+    /* Compliance Legend */
+    .compliance-legend {
+        display: flex;
+        gap: 24px;
+        margin-bottom: 24px;
+        padding: 16px 20px;
+        background: #f8fafc;
+        border-radius: 8px;
+        border: 1px solid #e5e7eb;
+        flex-wrap: wrap;
+    }
+    
+    .legend-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 14px;
+        color: #374151;
+    }
+    
+    .legend-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        flex-shrink: 0;
+    }
+    
+    .pf-dot {
+        background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+    }
+    
+    .esi-dot {
+        background: linear-gradient(135deg, #10b981, #059669);
+    }
+    
+    .pt-dot {
+        background: linear-gradient(135deg, #f59e0b, #d97706);
+    }
+    
+    .lwf-dot {
+        background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+    }
+    
+    .empty-state {
+        text-align: center;
+        padding: 80px 20px;
+        background: #ffffff;
+        border-radius: 12px;
+        border: 1px solid #e5e7eb;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        margin: 20px 0;
+    }
+    
+    .empty-state-icon {
+        margin-bottom: 24px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+    
+    .empty-state h3 {
+        color: #374151;
+        font-size: 24px;
+        font-weight: 600;
+        margin-bottom: 12px;
+    }
+    
+    .empty-state p {
+        color: #6b7280;
+        font-size: 16px;
+        margin-bottom: 32px;
+        max-width: 400px;
+        margin-left: auto;
+        margin-right: auto;
+    }
+    
+    .view-toggle {
+        display: flex;
+        gap: 4px;
+        background: #f3f4f6;
+        padding: 4px;
+        border-radius: 6px;
+    }
+    
+    .view-toggle .oh-btn {
+        border-radius: 4px;
+        transition: all 0.2s ease;
+    }
+    
+    .view-toggle .oh-btn--view-active {
+        background: #3b82f6;
+        color: white;
+        box-shadow: 0 2px 4px rgba(59, 130, 246, 0.3);
+    }
+    
+    /* Grid layout for card view */
+    .statutory-compliance-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(450px, 1fr));
+        gap: 24px;
+        margin-top: 20px;
+    }
+    
+    /* Responsive adjustments */
+    @media (max-width: 768px) {
+        .statutory-compliance-grid {
+            grid-template-columns: 1fr;
+        }
+        
+        .compliance-field {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 4px;
+        }
+        
+        .field-value {
+            text-align: left;
+        }
+    }
+</style>
+<section class="oh-wrapper oh-main__topbar" x-data="{searchShow: false}">
+    <div class="oh-main__titlebar oh-main__titlebar--left">
+        <h1 class="oh-main__titlebar-title fw-bold">{% trans "Statutory Compliance" %}</h1>
+        <a class="oh-main__titlebar-search-toggle" role="button" aria-label="Toggle Search"
+            @click="searchShow = !searchShow">
+            <ion-icon name="search-outline" class="oh-main__titlebar-serach-icon md hydrated" role="img"
+                aria-label="search outline"></ion-icon>
+        </a>
+    </div>
+    <form hx-get='{% url "filter-statutory-compliance" %}' id="filterForm" hx-swap="innerHTML"
+        hx-target="#payroll-statutory-compliance-container">
+        <div class="oh-main__titlebar oh-main__titlebar--right">
+            <div class="oh-input-group oh-input__search-group"
+                :class="searchShow ? 'oh-input__search-group--show' : ''">
+                <ion-icon name="search-outline" class="oh-input-group__icon oh-input-group__icon--left"></ion-icon>
+                <input type="text" class="oh-input oh-input__icon" aria-label="Search Input" id="filter-statutory-compliance"
+                    name="search" placeholder="{% trans 'Search' %}" onkeyup="$('.filterButton')[0].click();" />
+            </div>
+            <div class="oh-main__titlebar-button-container">
+                <div class="view-toggle">
+                    <a class="oh-btn oh-btn--view {% if request.GET.view == 'list' %} oh-btn--view-active {% endif %}"
+                        title='{% trans "List View" %}'
+                        onclick="$('[name=view]').val('list');$('.filterButton')[0].click();">
+                        <ion-icon name="list-outline" role="img" class="md hydrated"
+                            aria-label="list outline"></ion-icon>
+                    </a>
+                    <a class="oh-btn oh-btn--view {% if request.GET.view == 'card' or not request.GET.view %} oh-btn--view-active {% endif %}"
+                        title='{% trans "Card View" %}'
+                        onclick="$('[name=view]').val('card');$('.filterButton')[0].click();">
+                        <ion-icon name="grid-outline" role="img" class="md hydrated"
+                            aria-label="grid outline"></ion-icon>
+                    </a>
+                </div>
+                <a href="{% url 'statutory-compliance-create' %}" class="oh-btn oh-btn--secondary">
+                    <ion-icon name="add-outline" role="img" class="md hydrated" aria-label="add outline"></ion-icon>
+                    {% trans "Create" %}
+                </a>
+            </div>
+        </div>
+        <input type="hidden" name="view" value="{{ request.GET.view|default:'card' }}">
+        <button type="submit" class="filterButton" style="display: none;"></button>
+    </form>
+</section>
+
+<div class="oh-wrapper">
+    <div class="oh-general__tab-target oh-profile-section">
+        {% if statutory_compliances and statutory_compliances|length > 0 %}
+            <div class="oh-profile-section__card">
+                <div class="oh-profile-section__body">
+                    {% include "payroll/statutory_compliance/statutory_compliance_list.html" %}
+                </div>
+            </div>
+        {% else %}
+            <div class="oh-profile-section__body">
+                <div class="empty-state">
+                    <div class="empty-state-icon">
+                        <ion-icon name="shield-checkmark-outline" style="font-size: 64px; color: #9ca3af;"></ion-icon>
+                    </div>
+                    <h3>{% trans "No Statutory Compliance Records" %}</h3>
+                    <p>{% trans "There are currently no statutory compliance records to display. Create your first record to get started." %}</p>
+                    <a href="{% url 'statutory-compliance-create' %}" class="oh-btn oh-btn--secondary">
+                        <ion-icon name="add-outline" role="img" class="md hydrated" aria-label="add outline"></ion-icon>
+                        {% trans "Create First Record" %}
+                    </a>
+                </div>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+// HTMX configuration for real-time search
+document.addEventListener('DOMContentLoaded', function() {
+    const searchInput = document.getElementById('filter-statutory-compliance');
+    if (searchInput) {
+        let timeout;
+        searchInput.addEventListener('input', function() {
+            clearTimeout(timeout);
+            timeout = setTimeout(function() {
+                document.querySelector('.filterButton').click();
+            }, 300); // 300ms delay for better UX
+        });
+    }
+});
+
+// Action menu toggle function
+function toggleMenu(button) {
+    const menu = button.nextElementSibling;
+    const isOpen = menu.classList.contains('show');
+    
+    // Close all other menus
+    document.querySelectorAll('.action-menu.show').forEach(openMenu => {
+        if (openMenu !== menu) {
+            openMenu.classList.remove('show');
+        }
+    });
+    
+    // Toggle current menu
+    if (isOpen) {
+        menu.classList.remove('show');
+    } else {
+        menu.classList.add('show');
+    }
+}
+
+// Close menu when clicking outside
+document.addEventListener('click', function(event) {
+    if (!event.target.closest('.card-actions')) {
+        document.querySelectorAll('.action-menu.show').forEach(menu => {
+            menu.classList.remove('show');
+        });
+    }
+});
+</script>
+{% endblock content %}

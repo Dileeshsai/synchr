@@ -1,0 +1,38 @@
+{% extends 'index.html' %}
+{% load i18n %}
+
+{% block content %}
+<div class="oh-wrapper">
+    <div class="oh-main__titlebar oh-main__titlebar--left">
+        <h1 class="oh-main__titlebar-title fw-bold mb-0">
+            {% trans "Face Recognition Attendance" %}
+        </h1>
+    </div>
+    
+    <div class="oh-wrapper">
+        <div class="row justify-content-center">
+            <div class="col-12 col-lg-6">
+                <div class="oh-card">
+                    <div class="oh-card__body text-center">
+                        <div class="mb-4">
+                            <ion-icon name="person-add-outline" class="text-info" style="font-size: 64px;"></ion-icon>
+                        </div>
+                        <h4 class="mb-3">{% trans "Face Registration Required" %}</h4>
+                        <p class="text-muted mb-4">{{ message }}</p>
+                        <div class="d-flex justify-content-center gap-2">
+                            <a href="{% url 'edit-profile' %}" class="oh-btn oh-btn--primary">
+                                <ion-icon name="camera-outline" class="me-1"></ion-icon>
+                                {% trans "Register Face Image" %}
+                            </a>
+                            <a href="{% url 'view-my-attendance' %}" class="oh-btn oh-btn--secondary">
+                                <ion-icon name="time-outline" class="me-1"></ion-icon>
+                                {% trans "View Attendance" %}
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock content %}

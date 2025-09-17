@@ -1,0 +1,300 @@
+{% load i18n %}
+<div class="oh-general__tab-target oh-profile-section mb-4 d-none" id="face-registration">
+    <div class="oh-profile-section__card">
+        <div class="row">
+            <div class="col-12">
+                <h6 class="oh-profile-section__card-title">{% trans "Face Registration for Attendance" %}</h6>
+                <p class="oh-profile-section__card-text">
+                    {% trans "Upload a clear photo of your face to enable face recognition for attendance tracking." %}
+                </p>
+            </div>
+        </div>
+        
+        <!-- Current Face Image Display -->
+        <div class="row mb-4" id="current-face-section">
+            <div class="col-12 col-sm-12 col-md-6">
+                <div class="oh-profile-section__edit-photo me-4 mb-3">
+                    <img id="current-face-image" 
+                         src="{% if face_detection %}{{ face_detection.image.url }}{% else %}{% load static %}{% static 'images/default_avatar.jpg' %}{% endif %}" 
+                         class="oh-profile-section__avatar" 
+                         alt="Face Image" 
+                         style="width: 150px; height: 150px; object-fit: cover; border-radius: 50%;" />
+                </div>
+            </div>
+            <div class="col-12 col-sm-12 col-md-6 d-flex align-items-center">
+                <div>
+                    {% if face_detection %}
+                        <p class="text-success mb-2">
+                            <ion-icon name="checkmark-circle" class="me-1"></ion-icon>
+                            {% trans "Face image registered successfully" %}
+                        </p>
+                        <p class="text-muted small">
+                            {% trans "You can update your face image by uploading a new one below." %}
+                        </p>
+                    {% else %}
+                        <p class="text-warning mb-2">
+                            <ion-icon name="warning" class="me-1"></ion-icon>
+                            {% trans "No face image registered" %}
+                        </p>
+                        <p class="text-muted small">
+                            {% trans "Please upload a clear photo of your face to enable attendance tracking." %}
+                        </p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Face Upload Form -->
+        <form id="face-upload-form" enctype="multipart/form-data">
+            {% csrf_token %}
+            <div class="row">
+                <div class="col-12 col-sm-12 col-md-6">
+                    <label class="oh-label" for="face-image">
+                        {% trans "Upload Face Image" %}
+                        <span class="text-danger">*</span>
+                    </label>
+                    <input type="file" 
+                           name="image" 
+                           id="face-image" 
+                           class="oh-input oh-input--file oh-input--file-sm" 
+                           accept="image/*" 
+                           required />
+                    <small class="form-text text-muted">
+                        {% trans "Supported formats: JPG, PNG, GIF. Max size: 5MB" %}
+                    </small>
+                </div>
+                <div class="col-12 col-sm-12 col-md-6 d-flex align-items-end">
+                    <button type="submit" class="oh-btn oh-btn--secondary oh-btn--w-100-resp" id="upload-face-btn">
+                        <ion-icon name="cloud-upload-outline" class="me-1"></ion-icon>
+                        {% trans "Upload Face Image" %}
+                    </button>
+                </div>
+            </div>
+        </form>
+
+        <!-- Face Image Preview -->
+        <div class="row mt-4" id="face-preview-section" style="display: none;">
+            <div class="col-12">
+                <h6>{% trans "Preview" %}</h6>
+                <div class="oh-profile-section__edit-photo">
+                    <img id="face-preview" 
+                         class="oh-profile-section__avatar" 
+                         alt="Face Preview" 
+                         style="width: 150px; height: 150px; object-fit: cover; border-radius: 50%;" />
+                </div>
+            </div>
+        </div>
+
+        <!-- Status Messages -->
+        <div id="face-upload-message" class="mt-3"></div>
+
+        <!-- Delete Face Image Button (if exists) -->
+        {% if face_detection %}
+        <div class="row mt-4">
+            <div class="col-12">
+                <hr class="mt-3 mb-3" />
+                <button type="button" 
+                        class="oh-btn oh-btn--light-danger" 
+                        id="delete-face-btn"
+                        data-bs-toggle="modal" 
+                        data-bs-target="#deleteFaceModal">
+                    <ion-icon name="trash-outline" class="me-1"></ion-icon>
+                    {% trans "Delete Face Image" %}
+                </button>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="oh-modal" id="deleteFaceModal" role="dialog" aria-labelledby="deleteFaceModal" aria-hidden="true">
+    <div class="oh-modal__dialog">
+        <div class="oh-modal__dialog-header">
+            <span class="oh-modal__dialog-title" id="deleteFaceModalLabel">{% trans "Delete Face Image" %}</span>
+            <button class="oh-modal__close" aria-label="Close" data-bs-dismiss="modal">
+                <ion-icon name="close-outline"></ion-icon>
+            </button>
+        </div>
+        <div class="oh-modal__dialog-body">
+            <p>{% trans "Are you sure you want to delete your face image? This will disable face recognition for attendance tracking." %}</p>
+            <div class="d-flex justify-content-end">
+                <button type="button" class="oh-btn oh-btn--light me-2" data-bs-dismiss="modal">
+                    {% trans "Cancel" %}
+                </button>
+                <button type="button" class="oh-btn oh-btn--danger" id="confirm-delete-face">
+                    <ion-icon name="trash-outline" class="me-1"></ion-icon>
+                    {% trans "Delete" %}
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+$(document).ready(function() {
+    // Face image preview
+    $('#face-image').change(function(e) {
+        const file = this.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.addEventListener("load", function() {
+                const imageUrl = reader.result;
+                $('#face-preview').attr("src", imageUrl);
+                $('#face-preview-section').show();
+            });
+            reader.readAsDataURL(file);
+        } else {
+            $('#face-preview-section').hide();
+        }
+    });
+
+    // Face upload form submission
+    $('#face-upload-form').submit(function(e) {
+        e.preventDefault();
+        
+        const formData = new FormData(this);
+        const uploadBtn = $('#upload-face-btn');
+        const originalText = uploadBtn.html();
+        
+        // Show loading state
+        uploadBtn.html('<ion-icon name="hourglass-outline" class="me-1"></ion-icon>{% trans "Uploading..." %}');
+        uploadBtn.prop('disabled', true);
+        
+        $.ajax({
+            url: '{% url "employee-face-registration" %}',
+            type: 'POST',
+            data: formData,
+            processData: false,
+            contentType: false,
+            success: function(response) {
+                if (response.success) {
+                    $('#face-upload-message').html(
+                        '<div class="alert alert-success alert-dismissible fade show" role="alert">' +
+                        '<ion-icon name="checkmark-circle" class="me-1"></ion-icon>' +
+                        response.message +
+                        '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>' +
+                        '</div>'
+                    );
+                    
+                    // Update current face image
+                    if (response.face_image_url) {
+                        $('#current-face-image').attr('src', response.face_image_url);
+                    }
+                    
+                    // Update status text
+                    $('#current-face-section .text-warning').removeClass('text-warning').addClass('text-success');
+                    $('#current-face-section .text-warning ion-icon').attr('name', 'checkmark-circle');
+                    $('#current-face-section .text-warning').html('<ion-icon name="checkmark-circle" class="me-1"></ion-icon>{% trans "Face image registered successfully" %}');
+                    
+                    // Show delete button
+                    if (!$('#delete-face-btn').length) {
+                        $('#face-upload-message').after(
+                            '<div class="row mt-4"><div class="col-12"><hr class="mt-3 mb-3" />' +
+                            '<button type="button" class="oh-btn oh-btn--light-danger" id="delete-face-btn" data-bs-toggle="modal" data-bs-target="#deleteFaceModal">' +
+                            '<ion-icon name="trash-outline" class="me-1"></ion-icon>{% trans "Delete Face Image" %}' +
+                            '</button></div></div>'
+                        );
+                    }
+                    
+                    // Reset form
+                    $('#face-upload-form')[0].reset();
+                    $('#face-preview-section').hide();
+                } else {
+                    $('#face-upload-message').html(
+                        '<div class="alert alert-danger alert-dismissible fade show" role="alert">' +
+                        '<ion-icon name="warning" class="me-1"></ion-icon>' +
+                        response.message +
+                        '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>' +
+                        '</div>'
+                    );
+                }
+            },
+            error: function(xhr, status, error) {
+                let errorMessage = '{% trans "An error occurred while uploading the face image." %}';
+                if (xhr.responseJSON && xhr.responseJSON.message) {
+                    errorMessage = xhr.responseJSON.message;
+                }
+                $('#face-upload-message').html(
+                    '<div class="alert alert-danger alert-dismissible fade show" role="alert">' +
+                    '<ion-icon name="warning" class="me-1"></ion-icon>' +
+                    errorMessage +
+                    '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>' +
+                    '</div>'
+                );
+            },
+            complete: function() {
+                // Reset button state
+                uploadBtn.html(originalText);
+                uploadBtn.prop('disabled', false);
+            }
+        });
+    });
+
+    // Delete face image
+    $('#confirm-delete-face').click(function() {
+        const deleteBtn = $(this);
+        const originalText = deleteBtn.html();
+        
+        // Show loading state
+        deleteBtn.html('<ion-icon name="hourglass-outline" class="me-1"></ion-icon>{% trans "Deleting..." %}');
+        deleteBtn.prop('disabled', true);
+        
+        $.ajax({
+            url: '{% url "employee-face-delete" %}',
+            type: 'DELETE',
+            success: function(response) {
+                if (response.success) {
+                    $('#face-upload-message').html(
+                        '<div class="alert alert-success alert-dismissible fade show" role="alert">' +
+                        '<ion-icon name="checkmark-circle" class="me-1"></ion-icon>' +
+                        response.message +
+                        '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>' +
+                        '</div>'
+                    );
+                    
+                    // Reset face image to default
+                    $('#current-face-image').attr('src', '{% load static %}{% static "images/default_avatar.jpg" %}');
+                    
+                    // Update status text
+                    $('#current-face-section .text-success').removeClass('text-success').addClass('text-warning');
+                    $('#current-face-section .text-success ion-icon').attr('name', 'warning');
+                    $('#current-face-section .text-success').html('<ion-icon name="warning" class="me-1"></ion-icon>{% trans "No face image registered" %}');
+                    
+                    // Hide delete button
+                    $('#delete-face-btn').closest('.row').remove();
+                    
+                    // Close modal
+                    $('#deleteFaceModal').modal('hide');
+                } else {
+                    $('#face-upload-message').html(
+                        '<div class="alert alert-danger alert-dismissible fade show" role="alert">' +
+                        '<ion-icon name="warning" class="me-1"></ion-icon>' +
+                        response.message +
+                        '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>' +
+                        '</div>'
+                    );
+                }
+            },
+            error: function(xhr, status, error) {
+                let errorMessage = '{% trans "An error occurred while deleting the face image." %}';
+                if (xhr.responseJSON && xhr.responseJSON.message) {
+                    errorMessage = xhr.responseJSON.message;
+                }
+                $('#face-upload-message').html(
+                    '<div class="alert alert-danger alert-dismissible fade show" role="alert">' +
+                    '<ion-icon name="warning" class="me-1"></ion-icon>' +
+                    errorMessage +
+                    '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>' +
+                    '</div>'
+                );
+            },
+            complete: function() {
+                // Reset button state
+                deleteBtn.html(originalText);
+                deleteBtn.prop('disabled', false);
+            }
+        });
+    });
+});
+</script>

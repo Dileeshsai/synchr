@@ -1,0 +1,51 @@
+{% load static %}
+{% load i18n %}
+<div class="oh-dropdown" x-data="{open: false}" id="mainNavProfile">
+    <div class="oh-navbar__user-info" @click="open = !open" @click.outside="open = false">
+        <div class="oh-navbar__user-photo">
+            {% if request.user.employee_get %}
+                <img src="{{request.user.employee_get.get_avatar}}" class="oh-navbar__user-image"
+                    loading="lazy" />
+            {% else %}
+                <img src="{% static 'images/upload/userphoto.png' %}" class="oh-navbar__user-image"
+                    loading="lazy" />
+            {% endif %}
+        </div>
+        <span class="oh-navbar__user-name">
+            {% if request.user.employee_get %}
+                {{request.user.employee_get.employee_first_name | title}}
+            {% else %}
+                {{request.user.get_full_name|default:request.user.username|title}}
+            {% endif %}
+        </span>
+    </div>
+    <div class="oh-dropdown__menu oh-dropdown__menu--right" x-show="open"
+        style="display: none;">
+        <ul class="oh-dropdown__items">
+            {% if request.user.employee_get %}
+                {% if request.session.selected_company == "all" or request.user.employee_get.employee_work_info.company_id.id == request.session.selected_company|default:"-1"|add:"0" %}
+                    <li class="oh-dropdown__item">
+                        <a href="/employee/employee-profile" class="oh-dropdown__link">{% trans "My Profile" %}</a>
+                    </li>
+                {% endif %}
+            {% endif %}
+            <li class="oh-dropdown__item">
+                <a href="/change-username" class="oh-dropdown__link">{% trans "Change Username" %}</a>
+            </li>
+            <li class="oh-dropdown__item">
+                <a href="/change-password" class="oh-dropdown__link">{% trans "Change Password" %}</a>
+            </li>
+            {% if request.user.is_superuser %}
+                <li class="oh-dropdown__item">
+                    <a href="/admin/" class="oh-dropdown__link">{% trans "Admin Panel" %}</a>
+                </li>
+            {% endif %}
+        </ul>
+        <hr />
+        <ul class="oh-dropdown__items">
+            <li class="oh-dropdown__item">
+                <a href="/logout" class="oh-dropdown__link">{% trans "Logout" %}</a>
+            </li>
+        </ul>
+    </div>
+</div>

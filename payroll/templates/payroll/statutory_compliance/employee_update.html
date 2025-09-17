@@ -1,0 +1,23 @@
+{% extends 'index.html' %}
+{% load i18n %}
+{% load static %}
+
+{% block content %}
+<div class="oh-wrapper">
+    <div class="oh-general__tab-target oh-profile-section">
+        <div class="oh-profile-section__card">
+            <div class="oh-profile-section__header">
+                <h3 class="oh-profile-section__title">{% trans "Update Statutory Compliance for" %} {{ employee.get_full_name }}</h3>
+                <a href="{% url 'employee-view' employee.id %}" class="oh-btn oh-btn--light">
+                    <ion-icon name="arrow-back-outline"></ion-icon>
+                    {% trans "Back" %}
+                </a>
+            </div>
+            
+            <div class="oh-profile-section__body">
+                {% include "payroll/statutory_compliance/update_form.html" %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock content %}

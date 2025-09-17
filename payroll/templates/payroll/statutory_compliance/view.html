@@ -1,0 +1,181 @@
+{% extends 'index.html' %}
+{% load i18n %}
+{% load static %}
+
+{% block content %}
+<div class="oh-wrapper">
+    <div class="oh-general__tab-target oh-profile-section">
+        <div class="oh-profile-section__card">
+            <div class="oh-profile-section__header">
+                <h3 class="oh-profile-section__title">{% trans "Statutory Compliance Details" %}</h3>
+                <div class="oh-btn-group">
+                    <a href="{% url 'statutory-compliance-update' statutory_compliance.id %}" class="oh-btn oh-btn--secondary">
+                        <ion-icon name="create-outline"></ion-icon>
+                        {% trans "Edit" %}
+                    </a>
+                    <a href="{% url 'statutory-compliance-list' %}" class="oh-btn oh-btn--light">
+                        <ion-icon name="arrow-back-outline"></ion-icon>
+                        {% trans "Back" %}
+                    </a>
+                </div>
+            </div>
+            
+            <div class="oh-profile-section__body">
+                <div class="row">
+                    <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                        <div class="oh-profile__avatar oh-profile__avatar--lg">
+                            <img src="{{ statutory_compliance.employee_id.get_avatar }}" alt="Employee Avatar" class="oh-profile__avatar-img">
+                        </div>
+                        <h4 class="oh-profile__name mt-3">{{ statutory_compliance.employee_id.get_full_name }}</h4>
+                        <p class="oh-profile__email">{{ statutory_compliance.employee_id.email }}</p>
+                    </div>
+                </div>
+                
+                <hr class="mt-4 mb-4">
+                
+                <!-- PF (Provident Fund) Section -->
+                <div class="row mt-4">
+                    <div class="col-12">
+                        <h5 class="oh-label mb-3">{% trans "Provident Fund (PF) Details" %}</h5>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                        <div class="oh-info">
+                            <span class="oh-info__label">{% trans "PF Number" %}</span>
+                            <span class="oh-info__value">{{ statutory_compliance.pf_number|default:"-" }}</span>
+                        </div>
+                    </div>
+                    <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                        <div class="oh-info">
+                            <span class="oh-info__label">{% trans "PF UAN" %}</span>
+                            <span class="oh-info__value">{{ statutory_compliance.pf_uan|default:"-" }}</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                        <div class="oh-info">
+                            <span class="oh-info__label">{% trans "PF Contribution Percentage" %}</span>
+                            <span class="oh-info__value">{{ statutory_compliance.pf_contribution_percentage|default:"-" }}%</span>
+                        </div>
+                    </div>
+                    <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                        <div class="oh-info">
+                            <span class="oh-info__label">{% trans "PF Voluntary Contribution" %}</span>
+                            <span class="oh-info__value">{{ statutory_compliance.pf_voluntary_contribution|default:"-" }}</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                        <div class="oh-info">
+                            <span class="oh-info__label">{% trans "PF Nominee Name" %}</span>
+                            <span class="oh-info__value">{{ statutory_compliance.pf_nominee_name|default:"-" }}</span>
+                        </div>
+                    </div>
+                    <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                        <div class="oh-info">
+                            <span class="oh-info__label">{% trans "PF Nominee Relation" %}</span>
+                            <span class="oh-info__value">{{ statutory_compliance.pf_nominee_relation|default:"-" }}</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- ESI (Employee State Insurance) Section -->
+                <div class="row mt-4">
+                    <div class="col-12">
+                        <h5 class="oh-label mb-3">{% trans "Employee State Insurance (ESI) Details" %}</h5>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                        <div class="oh-info">
+                            <span class="oh-info__label">{% trans "ESI Number" %}</span>
+                            <span class="oh-info__value">{{ statutory_compliance.esi_number|default:"-" }}</span>
+                        </div>
+                    </div>
+                    <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                        <div class="oh-info">
+                            <span class="oh-info__label">{% trans "ESI Contribution Percentage" %}</span>
+                            <span class="oh-info__value">{{ statutory_compliance.esi_contribution_percentage|default:"-" }}%</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                        <div class="oh-info">
+                            <span class="oh-info__label">{% trans "ESI Family Members" %}</span>
+                            <span class="oh-info__value">{{ statutory_compliance.esi_family_members|default:"-" }}</span>
+                        </div>
+                    </div>
+                    <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                        <div class="oh-info">
+                            <span class="oh-info__label">{% trans "ESI Dispensary Code" %}</span>
+                            <span class="oh-info__value">{{ statutory_compliance.esi_dispensary_code|default:"-" }}</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Professional Tax Section -->
+                <div class="row mt-4">
+                    <div class="col-12">
+                        <h5 class="oh-label mb-3">{% trans "Professional Tax Details" %}</h5>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                        <div class="oh-info">
+                            <span class="oh-info__label">{% trans "Professional Tax Number" %}</span>
+                            <span class="oh-info__value">{{ statutory_compliance.pt_number|default:"-" }}</span>
+                        </div>
+                    </div>
+                    <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                        <div class="oh-info">
+                            <span class="oh-info__label">{% trans "Professional Tax State" %}</span>
+                            <span class="oh-info__value">{{ statutory_compliance.pt_state|default:"-" }}</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                        <div class="oh-info">
+                            <span class="oh-info__label">{% trans "Professional Tax Deduction Amount" %}</span>
+                            <span class="oh-info__value">{{ statutory_compliance.pt_deduction_amount|default:"-" }}</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Labour Welfare Fund Section -->
+                <div class="row mt-4">
+                    <div class="col-12">
+                        <h5 class="oh-label mb-3">{% trans "Labour Welfare Fund Details" %}</h5>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                        <div class="oh-info">
+                            <span class="oh-info__label">{% trans "Labour Welfare Fund Number" %}</span>
+                            <span class="oh-info__value">{{ statutory_compliance.lwf_number|default:"-" }}</span>
+                        </div>
+                    </div>
+                    <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                        <div class="oh-info">
+                            <span class="oh-info__label">{% trans "Labour Welfare Fund State" %}</span>
+                            <span class="oh-info__value">{{ statutory_compliance.lwf_state|default:"-" }}</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                        <div class="oh-info">
+                            <span class="oh-info__label">{% trans "Labour Welfare Fund Deduction Amount" %}</span>
+                            <span class="oh-info__value">{{ statutory_compliance.lwf_deduction_amount|default:"-" }}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock content %}

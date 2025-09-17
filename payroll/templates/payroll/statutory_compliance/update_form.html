@@ -1,0 +1,190 @@
+{% load i18n %}
+{% load widget_tweaks %}
+<div class="oh-general__tab-target oh-profile-section mb-4">
+    <div class="oh-profile-section__card">
+        <!-- Display form errors -->
+        {% if form.non_field_errors %}
+            <div class="alert alert-danger">
+                {{ form.non_field_errors }}
+            </div>
+        {% endif %}
+        
+        <form action="" method="post" class="oh-general__form">
+            {% csrf_token %}
+            <div class="row">
+                <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                    <div class="oh-input-group">
+                        <label class="oh-label">{% trans "Employee" %}</label>
+                        {{ form.employee_id|add_class:"oh-input w-100" }}
+                        {{ form.employee_id.errors }}
+                    </div>
+                </div>
+            </div>
+            
+            <!-- PF (Provident Fund) Section -->
+            <div class="row mt-4">
+                <div class="col-12">
+                    <h6 class="oh-label mb-3">{% trans "Provident Fund (PF) Details" %}</h6>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                    <div class="oh-input-group">
+                        <label class="oh-label">{% trans "PF Number" %}</label>
+                        {{ form.pf_number }}
+                        {{ form.pf_number.errors }}
+                    </div>
+                </div>
+                <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                    <div class="oh-input-group">
+                        <label class="oh-label">{% trans "PF UAN" %}</label>
+                        {{ form.pf_uan }}
+                        {{ form.pf_uan.errors }}
+                    </div>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                    <div class="oh-input-group">
+                        <label class="oh-label">{% trans "PF Contribution Percentage" %}</label>
+                        {{ form.pf_contribution_percentage }}
+                        {{ form.pf_contribution_percentage.errors }}
+                    </div>
+                </div>
+                <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                    <div class="oh-input-group">
+                        <label class="oh-label">{% trans "PF Voluntary Contribution" %}</label>
+                        {{ form.pf_voluntary_contribution }}
+                        {{ form.pf_voluntary_contribution.errors }}
+                    </div>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                    <div class="oh-input-group">
+                        <label class="oh-label">{% trans "PF Nominee Name" %}</label>
+                        {{ form.pf_nominee_name }}
+                        {{ form.pf_nominee_name.errors }}
+                    </div>
+                </div>
+                <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                    <div class="oh-input-group">
+                        <label class="oh-label">{% trans "PF Nominee Relation" %}</label>
+                        {{ form.pf_nominee_relation }}
+                        {{ form.pf_nominee_relation.errors }}
+                    </div>
+                </div>
+            </div>
+            
+            <!-- ESI (Employee State Insurance) Section -->
+            <div class="row mt-4">
+                <div class="col-12">
+                    <h6 class="oh-label mb-3">{% trans "Employee State Insurance (ESI) Details" %}</h6>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                    <div class="oh-input-group">
+                        <label class="oh-label">{% trans "ESI Number" %}</label>
+                        {{ form.esi_number }}
+                        {{ form.esi_number.errors }}
+                    </div>
+                </div>
+                <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                    <div class="oh-input-group">
+                        <label class="oh-label">{% trans "ESI Contribution Percentage" %}</label>
+                        {{ form.esi_contribution_percentage }}
+                        {{ form.esi_contribution_percentage.errors }}
+                    </div>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                    <div class="oh-input-group">
+                        <label class="oh-label">{% trans "ESI Family Members" %}</label>
+                        {{ form.esi_family_members }}
+                        {{ form.esi_family_members.errors }}
+                    </div>
+                </div>
+                <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                    <div class="oh-input-group">
+                        <label class="oh-label">{% trans "ESI Dispensary Code" %}</label>
+                        {{ form.esi_dispensary_code }}
+                        {{ form.esi_dispensary_code.errors }}
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Professional Tax Section -->
+            <div class="row mt-4">
+                <div class="col-12">
+                    <h6 class="oh-label mb-3">{% trans "Professional Tax Details" %}</h6>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                    <div class="oh-input-group">
+                        <label class="oh-label">{% trans "Professional Tax Number" %}</label>
+                        {{ form.pt_number }}
+                        {{ form.pt_number.errors }}
+                    </div>
+                </div>
+                <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                    <div class="oh-input-group">
+                        <label class="oh-label">{% trans "Professional Tax State" %}</label>
+                        {{ form.pt_state }}
+                        {{ form.pt_state.errors }}
+                    </div>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                    <div class="oh-input-group">
+                        <label class="oh-label">{% trans "Professional Tax Deduction Amount" %}</label>
+                        {{ form.pt_deduction_amount }}
+                        {{ form.pt_deduction_amount.errors }}
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Labour Welfare Fund Section -->
+            <div class="row mt-4">
+                <div class="col-12">
+                    <h6 class="oh-label mb-3">{% trans "Labour Welfare Fund Details" %}</h6>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                    <div class="oh-input-group">
+                        <label class="oh-label">{% trans "Labour Welfare Fund Number" %}</label>
+                        {{ form.lwf_number }}
+                        {{ form.lwf_number.errors }}
+                    </div>
+                </div>
+                <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                    <div class="oh-input-group">
+                        <label class="oh-label">{% trans "Labour Welfare Fund State" %}</label>
+                        {{ form.lwf_state }}
+                        {{ form.lwf_state.errors }}
+                    </div>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                    <div class="oh-input-group">
+                        <label class="oh-label">{% trans "Labour Welfare Fund Deduction Amount" %}</label>
+                        {{ form.lwf_deduction_amount }}
+                        {{ form.lwf_deduction_amount.errors }}
+                    </div>
+                </div>
+            </div>
+            
+            <hr class="mt-5 mb-3">
+            <div class="w-100 d-flex align-items-center justify-content-end">
+                <button type="submit" class="oh-btn oh-btn--secondary oh-btn--w-100-resp">
+                    {% trans "Update" %}
+                </button>
+            </div>
+        </form>
+    </div>
+</div>

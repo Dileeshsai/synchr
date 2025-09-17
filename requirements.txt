@@ -1,0 +1,130 @@
+APScheduler
+arabic-reshaper
+asgiref
+asn1crypto
+bs4
+certifi
+cffi
+chardet
+charset-normalizer
+click
+cmake==3.27.7
+cryptography
+cssselect2
+Django==4.2.21
+django-auditlog
+django-apscheduler
+django-cors-headers
+django-environ
+django-filter
+django-haystack
+django-import-export
+django-jsonfield
+django-mathfilters
+django-microsoft-auth
+django-model-utils
+django-simple-history
+django-storages
+django-widget-tweaks
+djangorestframework
+djangorestframework-simplejwt
+# dlib==19.24.2  # Commented out - use alternative installation method below
+drf-yasg
+et-xmlfile
+face_recognition==1.3.0
+geopy
+google-api-python-client
+google-cloud-storage==3.0.0
+html5lib
+Jinja2
+idna
+lxml
+numpy
+numpy==1.24.3
+oauthlib
+opencv-python==4.8.1.78
+openpyxl
+oscrypto
+pandas
+pdfkit
+pillow
+Pillow==10.0.1
+pycparser
+pyHanko
+pyhanko-certvalidator
+PyMuPDF== 1.24.5
+pypdf
+pypng
+python-bidi
+python-dateutil
+pytz
+PyYAML
+pyzk==0.9
+qrcode
+reportlab==4.0.9
+requests
+responses
+setuptools
+six
+scikit-image==0.21.0
+sqlparse
+svglib
+swapper
+tinycss2
+typing_extensions
+tzdata
+tzlocal
+uritools
+urllib3
+utils
+webencodings
+Whoosh
+xhtml2pdf
+XlsxWriter
+gunicorn
+psycopg2-binary
+whitenoise
+
+# Chart and Visualization Dependencies
+matplotlib>=3.7.0
+seaborn>=0.12.0
+plotly>=5.15.0
+kaleido>=0.2.1
+bokeh>=3.2.0
+altair>=5.0.0
+
+# Chart Bot Dependencies
+langchain>=0.0.350
+langgraph>=0.0.20
+openai>=1.0.0
+
+
+# FACE RECOGNITION INSTALLATION INSTRUCTIONS:
+# 
+# WINDOWS USERS - Choose ONE of these methods:
+#
+# METHOD 1 (Recommended - Pre-compiled wheels):
+# 1. pip install cmake
+# 2. pip install dlib --find-links https://github.com/sachadee/Dlib/releases
+# 3. pip install face_recognition
+#
+# METHOD 2 (Alternative - Conda):
+# 1. conda install -c conda-forge dlib
+# 2. pip install face_recognition
+#
+# METHOD 3 (Manual wheel download):
+# 1. Download dlib wheel from: https://github.com/sachadee/Dlib/releases
+# 2. pip install dlib-19.24.2-cp311-cp311-win_amd64.whl
+# 3. pip install face_recognition
+#
+# LINUX/MAC USERS:
+# 1. pip install cmake
+# 2. pip install dlib
+# 3. pip install face_recognition
+#
+# TROUBLESHOOTING:
+# - If dlib fails, try: pip install --upgrade pip setuptools wheel
+# - For Visual Studio errors: Install Visual Studio Build Tools
+# - Alternative: Use conda instead of pip for dlib
+
+

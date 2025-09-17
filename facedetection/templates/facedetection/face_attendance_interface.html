@@ -1,0 +1,315 @@
+{% extends 'index.html' %}
+{% load i18n %}
+
+{% block content %}
+<div class="oh-wrapper">
+    <div class="oh-main__titlebar oh-main__titlebar--left">
+        <h1 class="oh-main__titlebar-title fw-bold mb-0">
+            {% trans "Face Recognition Attendance" %}
+        </h1>
+    </div>
+    
+    <div class="oh-wrapper">
+        <div class="row">
+            <div class="col-12 col-lg-8">
+                <!-- Face Recognition Interface -->
+                <div class="oh-card">
+                    <div class="oh-card__header">
+                        <h5 class="oh-card__title">
+                            {% if action == 'checkin' %}
+                                {% trans "Check-In with Face Recognition" %}
+                            {% else %}
+                                {% trans "Check-Out with Face Recognition" %}
+                            {% endif %}
+                        </h5>
+                    </div>
+                    <div class="oh-card__body">
+                        <!-- Camera Interface -->
+                        <div class="face-recognition-container">
+                            <div class="camera-container mb-4">
+                                <video id="video" width="400" height="300" autoplay muted style="display: none;"></video>
+                                <canvas id="canvas" width="400" height="300" style="display: none;"></canvas>
+                                <div id="camera-placeholder" class="camera-placeholder">
+                                    <ion-icon name="camera-outline" class="camera-icon"></ion-icon>
+                                    <p>{% trans "Camera will start when you click the button below" %}</p>
+                                </div>
+                            </div>
+                            
+                            <!-- Controls -->
+                            <div class="face-controls mb-4">
+                                <button id="start-camera" class="oh-btn oh-btn--secondary me-2">
+                                    <ion-icon name="camera-outline" class="me-1"></ion-icon>
+                                    {% trans "Start Camera" %}
+                                </button>
+                                <button id="stop-camera" class="oh-btn oh-btn--light-danger me-2" style="display: none;">
+                                    <ion-icon name="stop-outline" class="me-1"></ion-icon>
+                                    {% trans "Stop Camera" %}
+                                </button>
+                                <button id="capture-face" class="oh-btn oh-btn--success" style="display: none;">
+                                    <ion-icon name="scan-outline" class="me-1"></ion-icon>
+                                    {% if action == 'checkin' %}
+                                        {% trans "Capture & Check-In" %}
+                                    {% else %}
+                                        {% trans "Capture & Check-Out" %}
+                                    {% endif %}
+                                </button>
+                            </div>
+                            
+                            <!-- Status Messages -->
+                            <div id="face-status" class="face-status mb-3"></div>
+                            
+                            <!-- Current Attendance Status -->
+                            <div class="attendance-status mb-4">
+                                <div id="attendance-activity-container">
+                                    <!-- This will be populated by the existing attendance system -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-12 col-lg-4">
+                <!-- Employee Info -->
+                <div class="oh-card">
+                    <div class="oh-card__header">
+                        <h5 class="oh-card__title">{% trans "Your Information" %}</h5>
+                    </div>
+                    <div class="oh-card__body">
+                        <div class="employee-info">
+                            <div class="employee-avatar mb-3">
+                                <img src="{{ employee_face.image.url }}" 
+                                     class="rounded-circle" 
+                                     width="80" 
+                                     height="80" 
+                                     alt="Your Face" 
+                                     style="object-fit: cover;">
+                            </div>
+                            <h6>{{ employee.employee_first_name }} {{ employee.employee_last_name }}</h6>
+                            <p class="text-muted small">{{ employee.badge_id }}</p>
+                            <p class="text-success small">
+                                <ion-icon name="checkmark-circle" class="me-1"></ion-icon>
+                                {% trans "Face registered for attendance" %}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Instructions -->
+                <div class="oh-card mt-3">
+                    <div class="oh-card__header">
+                        <h5 class="oh-card__title">{% trans "Instructions" %}</h5>
+                    </div>
+                    <div class="oh-card__body">
+                        <ol class="small">
+                            <li>{% trans "Click 'Start Camera' to begin" %}</li>
+                            <li>{% trans "Position your face in the camera view" %}</li>
+                            <li>{% trans "Click 'Capture & Recognize' to clock in/out" %}</li>
+                            <li>{% trans "Wait for face recognition confirmation" %}</li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.camera-placeholder {
+    width: 400px;
+    height: 300px;
+    border: 2px dashed #ddd;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background-color: #f8f9fa;
+    margin: 0 auto;
+}
+
+.camera-icon {
+    font-size: 48px;
+    color: #6c757d;
+    margin-bottom: 10px;
+}
+
+.face-controls {
+    text-align: center;
+}
+
+.face-status {
+    min-height: 50px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.employee-info {
+    text-align: center;
+}
+
+#video, #canvas {
+    border-radius: 8px;
+    margin: 0 auto;
+    display: block;
+}
+
+.face-recognition-container {
+    text-align: center;
+}
+</style>
+
+<script>
+$(document).ready(function() {
+    let stream = null;
+    let video = document.getElementById('video');
+    let canvas = document.getElementById('canvas');
+    let ctx = canvas.getContext('2d');
+    
+    // Start camera
+    $('#start-camera').click(function() {
+        navigator.mediaDevices.getUserMedia({ video: true })
+            .then(function(mediaStream) {
+                stream = mediaStream;
+                video.srcObject = stream;
+                video.style.display = 'block';
+                $('#camera-placeholder').hide();
+                $('#start-camera').hide();
+                $('#stop-camera').show();
+                $('#capture-face').show();
+                $('#face-status').html('<div class="alert alert-info"><ion-icon name="information-circle" class="me-1"></ion-icon>{% trans "Camera started. Position your face in the view." %}</div>');
+            })
+            .catch(function(err) {
+                $('#face-status').html('<div class="alert alert-danger"><ion-icon name="warning" class="me-1"></ion-icon>{% trans "Error accessing camera: " %}' + err.message + '</div>');
+            });
+    });
+    
+    // Stop camera
+    $('#stop-camera').click(function() {
+        if (stream) {
+            stream.getTracks().forEach(track => track.stop());
+            stream = null;
+        }
+        video.style.display = 'none';
+        $('#camera-placeholder').show();
+        $('#start-camera').show();
+        $('#stop-camera').hide();
+        $('#capture-face').hide();
+        $('#face-status').html('');
+    });
+    
+    // Capture and recognize face
+    $('#capture-face').click(function() {
+        if (!stream) {
+            $('#face-status').html('<div class="alert alert-warning"><ion-icon name="warning" class="me-1"></ion-icon>{% trans "Please start the camera first." %}</div>');
+            return;
+        }
+        
+        // Capture image from video
+        ctx.drawImage(video, 0, 0, 400, 300);
+        canvas.toBlob(function(blob) {
+            // Show loading status
+            $('#face-status').html('<div class="alert alert-info"><ion-icon name="hourglass-outline" class="me-1"></ion-icon>{% trans "Processing face recognition..." %}</div>');
+            $('#capture-face').prop('disabled', true);
+            
+            // Use the action from template context
+            const action = '{{ action }}';
+            const endpoint = action === 'checkout' ? '{% url "face-attendance-clock-out" %}' : '{% url "face-attendance-clock-in" %}';
+            const actionText = action === 'checkout' ? '{% trans "clock out" %}' : '{% trans "clock in" %}';
+            
+            // Create form data
+            const formData = new FormData();
+            formData.append('captured_image', blob, 'face_capture.jpg');
+            formData.append('csrfmiddlewaretoken', $('[name=csrfmiddlewaretoken]').val());
+            
+            // Send request
+            $.ajax({
+                url: endpoint,
+                type: 'POST',
+                data: formData,
+                processData: false,
+                contentType: false,
+                success: function(response) {
+                    if (response.success) {
+                        $('#face-status').html('<div class="alert alert-success"><ion-icon name="checkmark-circle" class="me-1"></ion-icon>' + response.message + '</div>');
+                        
+                        // Update attendance button
+                        if (response.html) {
+                            $('#attendance-activity-container').html(response.html);
+                        }
+                        
+                        // Redirect to attendance page after successful check-in/out
+                        if (response.redirect_url) {
+                            setTimeout(function() {
+                                window.location.href = response.redirect_url;
+                            }, 2000); // Wait 2 seconds to show success message
+                        } else {
+                            // Show success message for 3 seconds
+                            setTimeout(function() {
+                                $('#face-status').html('<div class="alert alert-info"><ion-icon name="information-circle" class="me-1"></ion-icon>{% trans "Ready for next " %}' + actionText + '</div>');
+                            }, 3000);
+                        }
+                    } else {
+                        // Show error with retry button
+                        const retryButton = '<button class="oh-btn oh-btn--secondary btn-sm ms-2" onclick="retryFaceRecognition()">{% trans "Retry" %}</button>';
+                        const contactAdminButton = '<a href="mailto:admin@company.com" class="oh-btn oh-btn--light-danger btn-sm ms-1">{% trans "Contact Admin" %}</a>';
+                        
+                        $('#face-status').html(`
+                            <div class="alert alert-danger">
+                                <ion-icon name="close-circle" class="me-1"></ion-icon>
+                                ${response.message}
+                                ${retryButton}
+                                ${contactAdminButton}
+                            </div>
+                        `);
+                    }
+                },
+                error: function(xhr, status, error) {
+                    let errorMessage = '{% trans "An error occurred during face recognition." %}';
+                    if (xhr.responseJSON && xhr.responseJSON.message) {
+                        errorMessage = xhr.responseJSON.message;
+                    }
+                    
+                    // Show error with retry button
+                    const retryButton = '<button class="oh-btn oh-btn--secondary btn-sm ms-2" onclick="retryFaceRecognition()">{% trans "Retry" %}</button>';
+                    const contactAdminButton = '<a href="mailto:admin@company.com" class="oh-btn oh-btn--light-danger btn-sm ms-1">{% trans "Contact Admin" %}</a>';
+                    
+                    $('#face-status').html(`
+                        <div class="alert alert-danger">
+                            <ion-icon name="warning" class="me-1"></ion-icon>
+                            ${errorMessage}
+                            ${retryButton}
+                            ${contactAdminButton}
+                        </div>
+                    `);
+                },
+                complete: function() {
+                    $('#capture-face').prop('disabled', false);
+                }
+            });
+        }, 'image/jpeg', 0.8);
+    });
+    
+    // Load current attendance status
+    function loadAttendanceStatus() {
+        $.ajax({
+            url: '{% url "clock-in" %}',
+            type: 'GET',
+            success: function(response) {
+                $('#attendance-activity-container').html(response);
+            }
+        });
+    }
+    
+    // Load attendance status on page load
+    loadAttendanceStatus();
+});
+
+// Retry function for face recognition
+function retryFaceRecognition() {
+    $('#face-status').html('<div class="alert alert-info"><ion-icon name="information-circle" class="me-1"></ion-icon>{% trans "Please try again. Make sure your face is clearly visible and well-lit." %}</div>');
+    $('#capture-face').click();
+}
+</script>
+{% endblock content %}

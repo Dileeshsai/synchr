@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Direct Chart Bot Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .test-button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        .test-button:hover {
+            background: #0056b3;
+        }
+        .result {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 5px;
+            white-space: pre-wrap;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        .info { background: #d1ecf1; color: #0c5460; }
+        .chat-input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Direct Chart Bot Test</h1>
+        <p>This page tests the Direct Chart Bot API that bypasses authentication issues.</p>
+        
+        <div class="test-section">
+            <h3>🔐 Authentication Test</h3>
+            <button class="test-button" onclick="testDirectAuth()">Test Direct Auth</button>
+            <div id="auth-result" class="result" style="display: none;"></div>
+        </div>
+        
+        <div class="test-section">
+            <h3>📊 Status Test</h3>
+            <button class="test-button" onclick="testDirectStatus()">Test Direct Status</button>
+            <div id="status-result" class="result" style="display: none;"></div>
+        </div>
+        
+        <div class="test-section">
+            <h3>💬 Chat Test</h3>
+            <input type="text" id="chat-input" class="chat-input" placeholder="Enter your message..." value="Hello, are you working?">
+            <button class="test-button" onclick="testDirectChat()">Send Message</button>
+            <div id="chat-result" class="result" style="display: none;"></div>
+        </div>
+    </div>
+
+    <script>
+        function getCSRFToken() {
+            const token = document.querySelector('[name=csrfmiddlewaretoken]');
+            return token ? token.value : '';
+        }
+        
+        async function callDirectAPI(method, url, data = null) {
+            const options = {
+                method: method,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCSRFToken(),
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                credentials: 'same-origin'
+            };
+            
+            if (data) {
+                options.body = JSON.stringify(data);
+            }
+            
+            const response = await fetch(url, options);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return await response.json();
+        }
+        
+        function showResult(elementId, content, type = 'info') {
+            const element = document.getElementById(elementId);
+            element.textContent = content;
+            element.className = `result ${type}`;
+            element.style.display = 'block';
+        }
+        
+        async function testDirectAuth() {
+            try {
+                const response = await callDirectAPI('GET', '/chart-bot-direct/api/direct/test-auth/');
+                showResult('auth-result', JSON.stringify(response, null, 2), 'success');
+            } catch (error) {
+                showResult('auth-result', `Error: ${error.message}`, 'error');
+            }
+        }
+        
+        async function testDirectStatus() {
+            try {
+                const response = await callDirectAPI('GET', '/chart-bot-direct/api/direct/status/');
+                showResult('status-result', JSON.stringify(response, null, 2), 'success');
+            } catch (error) {
+                showResult('status-result', `Error: ${error.message}`, 'error');
+            }
+        }
+        
+        async function testDirectChat() {
+            const input = document.getElementById('chat-input');
+            const message = input.value.trim();
+            
+            if (!message) {
+                showResult('chat-result', 'Please enter a message', 'error');
+                return;
+            }
+            
+            try {
+                const response = await callDirectAPI('POST', '/chart-bot-direct/api/direct/chat/', {
+                    message: message
+                });
+                showResult('chat-result', `Response: ${response.response}`, 'success');
+            } catch (error) {
+                showResult('chat-result', `Error: ${error.message}`, 'error');
+            }
+        }
+        
+        // Auto-test on page load
+        window.onload = function() {
+            console.log('Direct Chart Bot Test Page loaded');
+            testDirectAuth();
+            testDirectStatus();
+        };
+    </script>
+</body>
+</html>

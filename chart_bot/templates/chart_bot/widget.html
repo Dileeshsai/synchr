@@ -1,0 +1,22 @@
+{% load static %}
+<!-- Chart Bot Widget Template -->
+<div id="chart-bot-container"></div>
+
+<script>
+// Chart Bot Configuration
+window.chartBotConfig = {
+    apiEndpoint: '{% url "chart_bot_chat" %}',
+    historyEndpoint: '{% url "chart_bot_history" %}',
+    statusEndpoint: '{% url "chart_bot_status" %}',
+    sessionsEndpoint: '{% url "chart_bot_sessions" %}',
+    autoStart: true,
+    position: 'bottom-right',
+    theme: 'light'
+};
+</script>
+
+<!-- Load Chart Bot CSS -->
+<link rel="stylesheet" href="{% static 'chart_bot/css/chatbot.css' %}">
+
+<!-- Load Chart Bot JavaScript -->
+<script src="{% static 'chart_bot/js/chatbot.js' %}"></script>

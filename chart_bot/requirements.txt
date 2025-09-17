@@ -1,0 +1,15 @@
+# Professional Chart Bot Requirements
+# Core dependencies
+requests>=2.31.0
+pydantic>=2.5.0
+typing-extensions>=4.8.0
+
+# Optional LangGraph dependencies (will be installed if available)
+# langgraph>=0.0.40
+# langchain>=0.1.0
+# langchain-core>=0.1.46
+# langchain-community>=0.0.10
+
+# Django dependencies (already installed)
+# django>=4.2.0
+# djangorestframework>=3.14.0
