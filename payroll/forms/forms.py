@@ -181,18 +181,15 @@ class DashboardExport(Form):
         required=False,
         widget=forms.DateInput(attrs={"type": "date", "class": "oh-input w-100"}),
     )
-    employees = forms.ChoiceField(
+    employees = forms.ModelMultipleChoiceField(
         required=False,
-        choices=[(emp.id, emp.get_full_name()) for emp in Employee.objects.all()],
+        queryset=Employee.objects.all(),
         widget=forms.SelectMultiple,
     )
     status = forms.ChoiceField(required=False, choices=status_choices)
-    contributions = forms.ChoiceField(
+    contributions = forms.ModelMultipleChoiceField(
         required=False,
-        choices=[
-            (emp.id, emp.get_full_name())
-            for emp in get_active_employees(None)["get_active_employees"]
-        ],
+        queryset=Employee.objects.filter(is_active=True),
         widget=forms.SelectMultiple,
     )
 

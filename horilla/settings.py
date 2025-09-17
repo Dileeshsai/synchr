@@ -52,13 +52,12 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-    "rest_framework",  # Django REST Framework for mobile API
-    "rest_framework.authtoken",  # Token authentication for mobile app
     "notifications",
     "mathfilters",
     "corsheaders",
     "simple_history",
     "django_filters",
+    "rest_framework.authtoken",
     "base",
     "employee",
     "recruitment",
@@ -70,10 +69,8 @@ INSTALLED_APPS = [
     "payroll",
     "widget_tweaks",
     "django_apscheduler",
-    "chart_bot",  # Chart Bot - AI HR Assistant
-    "facedetection",  # Face detection for mobile app
-    "geofencing",  # Geofencing for mobile app
-    "horilla_api",  # API endpoints for mobile app
+    "chart_bot",
+
 ]
 APSCHEDULER_DATETIME_FORMAT = "N j, Y, f:s a"
 
