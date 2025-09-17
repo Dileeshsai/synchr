@@ -52,6 +52,8 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "rest_framework",  # Django REST Framework for mobile API
+    "rest_framework.authtoken",  # Token authentication for mobile app
     "notifications",
     "mathfilters",
     "corsheaders",
@@ -69,6 +71,9 @@ INSTALLED_APPS = [
     "widget_tweaks",
     "django_apscheduler",
     "chart_bot",  # Chart Bot - AI HR Assistant
+    "facedetection",  # Face detection for mobile app
+    "geofencing",  # Geofencing for mobile app
+    "horilla_api",  # API endpoints for mobile app
 ]
 APSCHEDULER_DATETIME_FORMAT = "N j, Y, f:s a"
 
@@ -186,20 +191,25 @@ MESSAGE_TAGS = {
 }
 
 
-CSRF_TRUSTED_ORIGINS = env("CSRF_TRUSTED_ORIGINS")
+CSRF_TRUSTED_ORIGINS = env("CSRF_TRUSTED_ORIGINS") + [
+    "https://app.synchrm.com",  # Production domain for mobile app
+    "https://*.app.synchrm.com",  # Wildcard for subdomains if needed
+]
 
-# Additional CSRF settings for development
-CSRF_COOKIE_HTTPONLY = False  # Allow JavaScript access for development
+# Additional CSRF settings for mobile app
+CSRF_COOKIE_HTTPONLY = False  # Allow JavaScript access for mobile app
 CSRF_USE_SESSIONS = False  # Use cookies instead of sessions for CSRF
+CSRF_COOKIE_DOMAIN = None  # Allow cross-domain for mobile app
 
 # CORS settings for mobile app
 CORS_ALLOWED_ORIGINS = [
     "http://192.168.3.186:8000",
     "http://localhost:8000",
     "http://127.0.0.1:8000",
+    "https://app.synchrm.com",  # Production domain
 ]
 
-CORS_ALLOW_ALL_ORIGINS = True  # Allow all origins for development
+CORS_ALLOW_ALL_ORIGINS = True  # Allow all origins for development and mobile APK
 CORS_ALLOW_CREDENTIALS = True
 
 # Additional CORS headers for mobile app
@@ -213,19 +223,34 @@ CORS_ALLOW_HEADERS = [
     'user-agent',
     'x-csrftoken',
     'x-requested-with',
+    'x-api-key',  # For mobile API authentication
+    'cache-control',  # For mobile caching
+    'pragma',  # For mobile caching
+]
+
+# Additional CORS methods for mobile app
+CORS_ALLOW_METHODS = [
+    'DELETE',
+    'GET',
+    'OPTIONS',
+    'PATCH',
+    'POST',
+    'PUT',
 ]
 
 # Session settings for mobile app
-SESSION_COOKIE_SAMESITE = 'Lax'  # Changed from 'None' to 'Lax' for local development
+SESSION_COOKIE_SAMESITE = None  # Allow cross-site requests for mobile APK
 SESSION_COOKIE_SECURE = False  # Set to True in production with HTTPS
-CSRF_COOKIE_SAMESITE = 'Lax'  # Changed from 'None' to 'Lax' for local development
+CSRF_COOKIE_SAMESITE = None  # Allow cross-site requests for mobile APK
 CSRF_COOKIE_SECURE = False  # Set to True in production with HTTPS
+SESSION_COOKIE_AGE = 86400  # 24 hours session for mobile app
+SESSION_EXPIRE_AT_BROWSER_CLOSE = False  # Keep session active for mobile app
 
 # API settings for mobile app
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework.authentication.SessionAuthentication',
-        'rest_framework.authentication.TokenAuthentication',
+        'rest_framework.authentication.TokenAuthentication',  # Primary for mobile app
+        'rest_framework.authentication.SessionAuthentication',  # Fallback for web
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
@@ -238,6 +263,15 @@ REST_FRAMEWORK = {
         'rest_framework.parsers.MultiPartParser',
         'rest_framework.parsers.FormParser',
     ],
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle'
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '100/hour',
+        'user': '1000/hour'
+    },
+    'EXCEPTION_HANDLER': 'rest_framework.views.exception_handler',
 }
 
 LOGIN_URL = "/login"
@@ -295,6 +329,46 @@ if not DEBUG:
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    
+    # Production CORS settings for mobile app
+    CORS_ALLOW_ALL_ORIGINS = False  # Restrict origins in production
+    CORS_ALLOWED_ORIGINS = [
+        "https://app.synchrm.com",
+        "https://www.synchrm.com",
+    ]
+    
+    # Production CSRF settings
+    CSRF_TRUSTED_ORIGINS = [
+        "https://app.synchrm.com",
+        "https://www.synchrm.com",
+    ]
+
+# Mobile app specific settings
+MOBILE_APP_SETTINGS = {
+    'FACE_RECOGNITION_ENABLED': True,
+    'GEOFENCING_ENABLED': True,
+    'OFFLINE_MODE_ENABLED': True,
+    'MAX_UPLOAD_SIZE': 10 * 1024 * 1024,  # 10MB for face images
+    'TOKEN_EXPIRY_HOURS': 24,  # 24 hours for mobile tokens
+}
+
+# File upload settings for mobile app
+FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10MB
+DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10MB
+DATA_UPLOAD_MAX_NUMBER_FIELDS = 1000
+
+# Cache settings for mobile app performance
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'hrms-cache',
+        'TIMEOUT': 300,  # 5 minutes default timeout
+        'OPTIONS': {
+            'MAX_ENTRIES': 1000,
+            'CULL_FREQUENCY': 3,
+        }
+    }
+}
 
 #Email settings
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
