@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 class DirectChartBotAPIView(APIView):
     """
-    Direct Chart Bot API that bypasses authentication issues
+    Direct Chat Bot API that bypasses authentication issues
     """
     permission_classes = [AllowAny]
     
@@ -151,7 +151,7 @@ class DirectStatusAPIView(APIView):
             return Response({
                 'authenticated': True,
                 'bot_enabled': True,
-                'bot_name': 'Direct Chart Bot',
+                'bot_name': 'SYNC AI',
                 'user_role': 'admin' if user.is_superuser else 'staff' if user.is_staff else 'employee',
                 'permissions': {
                     'can_view_personal': True,

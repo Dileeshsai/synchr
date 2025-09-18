@@ -44,6 +44,10 @@ class ProfessionalChartBot {
         
         if (this.config.autoStart) {
             this.show();
+            // Start in minimized state if configured
+            if (this.config.startMinimized) {
+                this.toggleMinimize();
+            }
         }
     }
     
@@ -65,18 +69,16 @@ class ProfessionalChartBot {
             <div class="chart-bot-header" id="chart-bot-header">
                 <div class="chart-bot-title">
                     <div class="chart-bot-avatar">🤖</div>
-                    <span>Chart Bot</span>
+                    <span>SYNC AI</span>
                     <div class="chart-bot-status" id="chart-bot-status"></div>
                 </div>
                 <div class="chart-bot-controls">
-                    <button class="chart-bot-btn" id="chart-bot-minimize" title="Minimize">−</button>
-                    <button class="chart-bot-btn" id="chart-bot-close" title="Close">×</button>
                 </div>
             </div>
             <div class="chart-bot-body" id="chart-bot-body">
                 <div class="chart-bot-messages" id="chart-bot-messages">
                     <div class="chart-bot-welcome">
-                        <h4>👋 Hi! I'm Chart Bot</h4>
+                        <h4>👋 Hi! I'm SYNC AI</h4>
                         <p>Your AI-powered HR Assistant. I can help you with:</p>
                         <ul style="text-align: left; margin: 10px 0;">
                             <li>📊 Attendance & Leave queries</li>
@@ -119,21 +121,10 @@ class ProfessionalChartBot {
     bindEvents() {
         // Header click to toggle minimize
         this.header.addEventListener('click', (e) => {
-            if (e.target.closest('.chart-bot-controls')) return;
             this.toggleMinimize();
         });
         
-        // Minimize button
-        this.widget.querySelector('#chart-bot-minimize').addEventListener('click', (e) => {
-            e.stopPropagation();
-            this.toggleMinimize();
-        });
         
-        // Close button
-        this.widget.querySelector('#chart-bot-close').addEventListener('click', (e) => {
-            e.stopPropagation();
-            this.hide();
-        });
         
         // Send button
         this.sendBtn.addEventListener('click', () => {
@@ -215,7 +206,7 @@ class ProfessionalChartBot {
                 this.state.botStatusLoaded = true;
                 this.log('Bot status loaded successfully', response);
             } else {
-                this.addMessage('system', 'Chart Bot is currently offline. Please try again later.');
+                this.addMessage('system', 'SYNC AI is currently offline. Please try again later.');
                 this.log('Bot is disabled or authentication failed', response);
             }
         } catch (error) {
@@ -290,7 +281,7 @@ class ProfessionalChartBot {
             
             // Provide specific error messages
             if (error.message.includes('Authentication required')) {
-                this.addMessage('bot', 'Please log in to use Chart Bot. You need to be authenticated to access HR information.');
+                this.addMessage('bot', 'Please log in to use SYNC AI. You need to be authenticated to access HR information.');
             } else if (error.message.includes('timeout')) {
                 this.addMessage('bot', 'Request timed out. Please try again.');
             } else if (error.message.includes('network')) {
@@ -467,10 +458,32 @@ class ProfessionalChartBot {
             this.widget.classList.add('minimized');
             this.header.classList.add('minimized');
             this.body.style.display = 'none';
+            
+            // Get title element and add minimized class
+            const title = this.widget.querySelector('.chart-bot-title');
+            if (title) {
+                title.classList.add('minimized');
+            }
+            
+            // Ensure avatar is visible and properly styled
+            const avatar = this.widget.querySelector('.chart-bot-avatar');
+            if (avatar) {
+                avatar.style.display = 'flex';
+                avatar.style.alignItems = 'center';
+                avatar.style.justifyContent = 'center';
+                avatar.textContent = '🤖';
+            }
         } else {
             this.widget.classList.remove('minimized');
             this.header.classList.remove('minimized');
             this.body.style.display = 'flex';
+            
+            // Remove minimized class from title
+            const title = this.widget.querySelector('.chart-bot-title');
+            if (title) {
+                title.classList.remove('minimized');
+            }
+            
             this.input.focus();
         }
     }
@@ -506,10 +519,52 @@ class ProfessionalChartBot {
 
 // Auto-initialize if script is loaded
 document.addEventListener('DOMContentLoaded', function() {
+    console.log('SYNC AI Bot: DOM Content Loaded');
+    console.log('SYNC AI Bot: Config available?', !!window.chartBotConfig);
+    
     if (window.chartBotConfig) {
+        console.log('SYNC AI Bot: Initializing with config:', window.chartBotConfig);
+        window.chartBot = new ProfessionalChartBot(window.chartBotConfig);
+        console.log('SYNC AI Bot: Bot initialized successfully');
+    } else {
+        console.warn('SYNC AI Bot: No configuration found, bot will not initialize');
+    }
+});
+
+// Also try to initialize when window loads (fallback)
+window.addEventListener('load', function() {
+    console.log('SYNC AI Bot: Window Load event');
+    if (!window.chartBot && window.chartBotConfig) {
+        console.log('SYNC AI Bot: Initializing on window load (fallback)');
         window.chartBot = new ProfessionalChartBot(window.chartBotConfig);
     }
 });
 
 // Export for manual initialization
 window.ProfessionalChartBot = ProfessionalChartBot;
+
+// Manual initialization function for debugging
+window.initSyncAI = function() {
+    console.log('SYNC AI Bot: Manual initialization called');
+    if (window.chartBotConfig) {
+        if (window.chartBot) {
+            console.log('SYNC AI Bot: Destroying existing bot');
+            window.chartBot.destroy();
+        }
+        console.log('SYNC AI Bot: Creating new bot instance');
+        window.chartBot = new ProfessionalChartBot(window.chartBotConfig);
+        console.log('SYNC AI Bot: Manual initialization complete');
+    } else {
+        console.error('SYNC AI Bot: No configuration available for manual initialization');
+    }
+};
+
+// Debug function to check bot status
+window.checkSyncAIStatus = function() {
+    console.log('SYNC AI Bot Status Check:');
+    console.log('- Config available:', !!window.chartBotConfig);
+    console.log('- Bot instance:', !!window.chartBot);
+    console.log('- Widget exists:', !!(window.chartBot && window.chartBot.widget));
+    console.log('- Widget visible:', !!(window.chartBot && window.chartBot.widget && window.chartBot.widget.style.display !== 'none'));
+    console.log('- Widget minimized:', !!(window.chartBot && window.chartBot.state && window.chartBot.state.isMinimized));
+};

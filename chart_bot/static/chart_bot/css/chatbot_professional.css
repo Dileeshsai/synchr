@@ -2,13 +2,13 @@
 .chart-bot-widget.professional {
     position: fixed;
     bottom: 20px;
-    right: 20px;
+    right: 80px;
     width: 380px;
     height: 520px;
     background: #ffffff;
     border-radius: 16px;
     box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
-    z-index: 9999;
+    z-index: 99999;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
     display: flex;
     flex-direction: column;
@@ -22,11 +22,19 @@
     height: 60px;
     width: 60px;
     border-radius: 50%;
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+    border: 2px solid rgba(255, 255, 255, 0.9);
+    right: 80px;
 }
 
 .chart-bot-widget.professional:hover {
     box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
     transform: translateY(-2px);
+}
+
+.chart-bot-widget.professional.minimized:hover {
+    transform: translateY(-2px) scale(1.05);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
 }
 
 .chart-bot-header {
@@ -54,8 +62,13 @@
 }
 
 .chart-bot-header.minimized {
-    padding: 16px;
+    padding: 0;
     justify-content: center;
+    align-items: center;
+    display: flex;
+    width: 100%;
+    height: 100%;
+    position: relative;
 }
 
 .chart-bot-title {
@@ -69,8 +82,30 @@
 }
 
 .chart-bot-title.minimized {
+    display: flex !important;
+    justify-content: center;
+    align-items: center;
+    position: relative;
+    width: 100%;
+    height: 100%;
+}
+
+.chart-bot-title.minimized span {
     display: none;
 }
+
+.chart-bot-title.minimized .chart-bot-status {
+    display: none;
+}
+
+.chart-bot-title.minimized .chart-bot-avatar {
+    font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+    font-variant-emoji: emoji;
+    -webkit-font-feature-settings: "liga" 1;
+    font-feature-settings: "liga" 1;
+    position: relative;
+}
+
 
 .chart-bot-avatar {
     width: 36px;
@@ -85,12 +120,27 @@
     border: 2px solid rgba(255, 255, 255, 0.3);
 }
 
-.chart-bot-controls {
-    display: flex;
+.chart-bot-header.minimized .chart-bot-avatar {
+    width: 44px;
+    height: 44px;
+    font-size: 28px;
+    background: rgba(255, 255, 255, 0.95);
+    border: 3px solid rgba(255, 255, 255, 0.8);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    display: flex !important;
     align-items: center;
-    gap: 8px;
-    position: relative;
-    z-index: 1;
+    justify-content: center;
+    line-height: 1;
+    text-align: center;
+    margin: 0 auto;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+}
+
+.chart-bot-controls {
+    display: none;
 }
 
 .chart-bot-controls.minimized {
@@ -371,15 +421,14 @@
 }
 
 .chart-bot-status {
-    position: absolute;
-    top: 8px;
-    right: 8px;
     width: 10px;
     height: 10px;
     border-radius: 50%;
     background: #48bb78;
     border: 2px solid white;
     box-shadow: 0 0 0 2px rgba(72, 187, 120, 0.3);
+    margin-left: 8px;
+    flex-shrink: 0;
 }
 
 .chart-bot-status.offline {
@@ -423,7 +472,7 @@
         width: 60px;
         height: 60px;
         bottom: 20px;
-        right: 20px;
+        right: 80px;
         border-radius: 50%;
         border: 1px solid #e1e5e9;
     }

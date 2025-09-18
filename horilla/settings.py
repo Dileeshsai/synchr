@@ -89,7 +89,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
-    "chart_bot.middleware_direct.DirectChartBotMiddleware",  # Direct Chart Bot widget injection (bypasses auth issues)
+    "chart_bot.middleware_direct.SyncAIMiddleware",  # SYNC AI widget injection (bypasses auth issues)
 ]
 
 ROOT_URLCONF = "horilla.urls"
