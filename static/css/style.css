@@ -486,13 +486,6 @@ html {
     z-index: 1;
 }
 
-/* Ensure proper stacking for all content */
-.oh-card {
-    position: relative;
-    z-index: 60;
-    background-color: #ffffff !important;
-}
-
 /* Fix for any floating or absolute positioned error elements */
 .error-floating {
     display: none !important;

@@ -2013,11 +2013,13 @@ def statutory_compliance_list(request):
 
 
 @login_required
+@hx_request_required
 @permission_required("payroll.view_statutorycompliance")
 def filter_statutory_compliance(request):
     """
     Filter statutory compliance records with HTMX
     """
+    query_string = request.GET.urlencode()
     queryset = StatutoryCompliance.objects.all()
     
     # Search functionality
@@ -2033,6 +2035,12 @@ def filter_statutory_compliance(request):
             Q(lwf_state__icontains=search)
         )
     
+    list_view = "payroll/statutory_compliance/statutory_compliance_list.html"
+    card_view = "payroll/statutory_compliance/statutory_compliance_cards.html"
+    template = card_view
+    if request.GET.get("view") == "list":
+        template = list_view
+    
     # Sorting
     sortby = request.GET.get("sortby")
     if sortby:
@@ -2046,13 +2054,17 @@ def filter_statutory_compliance(request):
     # Get IDs for modal functionality
     statutory_compliance_ids = list(queryset.values_list("id", flat=True))
     
+    data_dict = parse_qs(query_string)
+    get_key_instances(StatutoryCompliance, data_dict)
+    
     return render(
         request,
-        "payroll/statutory_compliance/statutory_compliance_list.html",
+        template,
         {
             "statutory_compliances": statutory_compliances,
             "statutory_compliance_ids": statutory_compliance_ids,
-            "pd": request.GET.urlencode(),
+            "pd": query_string,
+            "filter_dict": data_dict,
         },
     )
 

@@ -3,31 +3,11 @@
 {% load static %}
 
 {% block content %}
-<div class="oh-wrapper">
-    <div class="oh-general__tab-target oh-profile-section">
-        <div class="oh-profile-section__card">
-            <div class="oh-profile-section__header">
-                <h3 class="oh-profile-section__title">{% trans "Create Statutory Compliance" %}</h3>
-                <a href="{% url 'statutory-compliance-list' %}" class="oh-btn oh-btn--light">
-                    <ion-icon name="arrow-back-outline"></ion-icon>
-                    {% trans "Back" %}
-                </a>
-            </div>
-            
-            <div class="oh-profile-section__body">
-                <!-- Display messages -->
-                {% if messages %}
-                    {% for message in messages %}
-                        <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
-                            {{ message }}
-                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                        </div>
-                    {% endfor %}
-                {% endif %}
-                
-                {% include "payroll/statutory_compliance/form.html" %}
-            </div>
-        </div>
+<div id="statutoryComplianceFormTarget">
+    <div class="oh-wrapper d-flex justify-content-center mt-4 mb-4">
+        <form action="" hx-swap="none" class="oh-onboarding-card" method="post" enctype="multipart/form-data">
+            {% csrf_token %} {{form.as_p}}
+        </form>
     </div>
 </div>
 {% endblock content %}

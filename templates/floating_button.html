@@ -21,7 +21,7 @@
         color: white;
         font-size: 2em;
         box-shadow: none;
-        z-index: 10;
+        z-index: 9999;
         border: 1px solid rgba(255, 255, 255, 0.2);
         backdrop-filter: blur(10px);
     }
@@ -46,6 +46,7 @@
         will-change: bottom;
         background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
         border: 1px solid rgba(255, 255, 255, 0.15);
+        z-index: 9999;
     }
     
     .inner-fabs .fab:hover {
@@ -122,6 +123,10 @@
         visibility: visible;
         opacity: 1;
     }
+    .inner-fabs {
+        z-index: 9999;
+    }
+    
     .inner-fabs a {
         display: block;
     }

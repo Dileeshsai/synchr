@@ -199,6 +199,8 @@ class StatutoryComplianceForm(ModelForm):
     Form for StatutoryCompliance model
     """
 
+    verbose_name = _("Statutory Compliance")
+
     class Meta:
         """
         Meta class for additional options
@@ -217,7 +219,7 @@ class StatutoryComplianceForm(ModelForm):
 
     def as_p(self, *args, **kwargs):
         context = {"form": self}
-        return render_to_string("payroll/statutory_compliance/form.html", context)
+        return render_to_string("common_form.html", context)
 
 
 class StatutoryComplianceUpdateForm(ModelForm):

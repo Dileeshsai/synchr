@@ -54,20 +54,3 @@
     {% endfor %}
 </div>
 
-<!-- File upload fields -->
-<div class="row">
-    <div class="col-lg-6">
-        <div class="oh-input__group">
-            <label class="oh-label" for="id_aadhaar_document">{% trans "Aadhaar Document" %}</label>
-            {{ form.aadhaar_document|add_class:'form-control' }}
-            {{ form.aadhaar_document.errors }}
-        </div>
-    </div>
-    <div class="col-lg-6">
-        <div class="oh-input__group">
-            <label class="oh-label" for="id_pan_document">{% trans "PAN Document" %}</label>
-            {{ form.pan_document|add_class:'form-control' }}
-            {{ form.pan_document.errors }}
-        </div>
-    </div>
-</div>

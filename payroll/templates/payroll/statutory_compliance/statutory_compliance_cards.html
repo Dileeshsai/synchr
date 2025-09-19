@@ -1,0 +1,95 @@
+{% load i18n %}
+{% load static %}
+
+<div class="row">
+    {% for statutory_compliance in statutory_compliances %}
+        <div class="col-12 col-md-6 col-lg-4 mb-4">
+            <div class="oh-card">
+                <div class="oh-card__header">
+                    <div class="oh-card__title">
+                        <div class="d-flex align-items-center">
+                            <div class="oh-card__avatar oh-card__avatar--sm me-3">
+                                <img src="{{ statutory_compliance.employee_id.get_avatar }}" alt="Employee Avatar" class="oh-card__avatar-image">
+                            </div>
+                            <div>
+                                <h5 class="oh-card__title-text mb-0">
+                                    {{ statutory_compliance.employee_id.employee_first_name }} {{ statutory_compliance.employee_id.employee_last_name }}
+                                </h5>
+                                <p class="oh-card__subtitle mb-0">{{ statutory_compliance.employee_id.badge_id }}</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="oh-card__actions">
+                        <div class="oh-dropdown" x-data="{open: false}">
+                            <button class="oh-btn oh-btn--light" @click="open = !open">
+                                <ion-icon name="ellipsis-vertical-outline"></ion-icon>
+                            </button>
+                            <div class="oh-dropdown__menu oh-dropdown__menu--right" x-show="open" @click.outside="open = false" style="display: none">
+                                <a href="{% url 'statutory-compliance-view' statutory_compliance.id %}" class="oh-dropdown__item">
+                                    <ion-icon name="eye-outline" class="me-2"></ion-icon>
+                                    {% trans "View" %}
+                                </a>
+                                {% if perms.payroll.change_statutorycompliance %}
+                                    <a href="{% url 'statutory-compliance-update' statutory_compliance.id %}" class="oh-dropdown__item">
+                                        <ion-icon name="create-outline" class="me-2"></ion-icon>
+                                        {% trans "Edit" %}
+                                    </a>
+                                {% endif %}
+                                {% if perms.payroll.delete_statutorycompliance %}
+                                    <a href="{% url 'statutory-compliance-delete' statutory_compliance.id %}" class="oh-dropdown__item oh-dropdown__item--danger">
+                                        <ion-icon name="trash-outline" class="me-2"></ion-icon>
+                                        {% trans "Delete" %}
+                                    </a>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="oh-card__body">
+                    <div class="row">
+                        {% if statutory_compliance.pf_number %}
+                            <div class="col-12 mb-3">
+                                <div class="oh-info">
+                                    <span class="oh-info__label">{% trans "PF Number" %}</span>
+                                    <span class="oh-info__value">{{ statutory_compliance.pf_number }}</span>
+                                </div>
+                            </div>
+                        {% endif %}
+                        {% if statutory_compliance.pf_uan %}
+                            <div class="col-12 mb-3">
+                                <div class="oh-info">
+                                    <span class="oh-info__label">{% trans "PF UAN" %}</span>
+                                    <span class="oh-info__value">{{ statutory_compliance.pf_uan }}</span>
+                                </div>
+                            </div>
+                        {% endif %}
+                        {% if statutory_compliance.esi_number %}
+                            <div class="col-12 mb-3">
+                                <div class="oh-info">
+                                    <span class="oh-info__label">{% trans "ESI Number" %}</span>
+                                    <span class="oh-info__value">{{ statutory_compliance.esi_number }}</span>
+                                </div>
+                            </div>
+                        {% endif %}
+                        {% if statutory_compliance.pt_number %}
+                            <div class="col-12 mb-3">
+                                <div class="oh-info">
+                                    <span class="oh-info__label">{% trans "PT Number" %}</span>
+                                    <span class="oh-info__value">{{ statutory_compliance.pt_number }}</span>
+                                </div>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="oh-card__footer">
+                    <div class="oh-card__footer-actions">
+                        <a href="{% url 'statutory-compliance-view' statutory_compliance.id %}" class="oh-btn oh-btn--light">
+                            <ion-icon name="eye-outline" class="me-1"></ion-icon>
+                            {% trans "View Details" %}
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    {% endfor %}
+</div>

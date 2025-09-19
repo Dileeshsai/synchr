@@ -165,6 +165,8 @@ class EmployeeForm(ModelForm):
             "is_from_onboarding",
             "is_directly_converted",
             "is_active",
+            "aadhaar_document",
+            "pan_document",
         )
         widgets = {
             "dob": TextInput(attrs={"type": "date", "id": "dob"}),
