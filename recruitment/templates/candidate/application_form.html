@@ -360,6 +360,28 @@
             });
         })
     })
+
+    // Additional image upload functionality for the modal
+    $(document).ready(function() {
+        // Handle image upload in modal
+        $('#photo').on('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    $('.oh-upload-photo').attr('src', e.target.result);
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // Handle delete image button
+        $('.oh-remove-image').on('click', function(e) {
+            e.preventDefault();
+            $('.oh-upload-photo').attr('src', '/static/images/ui/user.jpg');
+            $('#photo').val('');
+        });
+    });
 </script>
 
 {% endblock content %}

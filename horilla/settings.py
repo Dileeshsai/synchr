@@ -367,12 +367,23 @@ CACHES = {
     }
 }
 
+
+
 #Email settings
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = 'mail.mcb5.in'
-EMAIL_PORT = 25
-EMAIL_HOST_USER = 'udayj'
-EMAIL_HOST_PASSWORD = 'tx0kIA6AsPlOHykiHSjFnbcf'
-EMAIL_USE_TLS = False
-EMAIL_USE_SSL = False
-DEFAULT_FROM_EMAIL = 'synchrm@synchrm.com'
+EMAIL_HOST = 'smtp.gmail.com'         # e.g., 'smtp.gmail.com'
+EMAIL_PORT = 587                             # or 465 for SSL
+EMAIL_HOST_USER = 'rajinin7805@gmail.com'
+EMAIL_HOST_PASSWORD = 'vbzt kcrm tknd vivz'
+EMAIL_USE_TLS = True                         # True for TLS, False for SSL
+DEFAULT_FROM_EMAIL = 'rajinin7805@gmail.com'
+
+# #Email settings
+# EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+# EMAIL_HOST = 'mail.mcb5.in'
+# EMAIL_PORT = 25
+# EMAIL_HOST_USER = 'udayj'
+# EMAIL_HOST_PASSWORD = 'tx0kIA6AsPlOHykiHSjFnbcf'
+# EMAIL_USE_TLS = False
+# EMAIL_USE_SSL = False
+# DEFAULT_FROM_EMAIL = 'synchrm@synchrm.com'
