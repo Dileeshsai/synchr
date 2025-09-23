@@ -1,0 +1,101 @@
+{% load i18n %}
+<input type="hidden" name="view" id="filterView" value="list">
+<div class="oh-dropdown__filter-body">
+    <div class="oh-accordion">
+        <div class="oh-accordion-header">{% trans "Statutory Compliance" %}</div>
+        <div class="oh-accordion-body">
+            <div class="row">
+                <div class="col-sm-6">
+                    <div class="oh-input-group">
+                        <label class="oh-label">{% trans "Employee" %}</label>
+                        <select name="employee_id" class="oh-select oh-select-2" id="id_employee_id">
+                            <option value="">{% trans "All" %}</option>
+                            {% for employee in employees %}
+                                <option value="{{ employee.id }}">{{ employee.get_full_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div class="col-sm-6">
+                    <div class="oh-input-group">
+                        <label class="oh-label">{% trans "PF Number" %}</label>
+                        <select name="pf_number" class="oh-select oh-select-2">
+                            <option value="">{% trans "All" %}</option>
+                            <option value="true">{% trans "Yes" %}</option>
+                            <option value="false">{% trans "No" %}</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-sm-6">
+                    <div class="oh-input-group">
+                        <label class="oh-label">{% trans "ESI Number" %}</label>
+                        <select name="esi_number" class="oh-select oh-select-2">
+                            <option value="">{% trans "All" %}</option>
+                            <option value="true">{% trans "Yes" %}</option>
+                            <option value="false">{% trans "No" %}</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="col-sm-6">
+                    <div class="oh-input-group">
+                        <label class="oh-label">{% trans "PT Number" %}</label>
+                        <select name="pt_number" class="oh-select oh-select-2">
+                            <option value="">{% trans "All" %}</option>
+                            <option value="true">{% trans "Yes" %}</option>
+                            <option value="false">{% trans "No" %}</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-sm-6">
+                    <div class="oh-input-group">
+                        <label class="oh-label">{% trans "LWF Number" %}</label>
+                        <select name="lwf_number" class="oh-select oh-select-2">
+                            <option value="">{% trans "All" %}</option>
+                            <option value="true">{% trans "Yes" %}</option>
+                            <option value="false">{% trans "No" %}</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="col-sm-6">
+                    <div class="oh-input-group">
+                        <label class="oh-label">{% trans "PAN Number" %}</label>
+                        <select name="pan_number" class="oh-select oh-select-2">
+                            <option value="">{% trans "All" %}</option>
+                            <option value="true">{% trans "Yes" %}</option>
+                            <option value="false">{% trans "No" %}</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="oh-dropdown__filter-footer">
+    <button type="submit" class="oh-btn oh-btn--secondary oh-btn--small w-100 filterButton" id="filterSubmit">
+        {% trans "Filter" %}
+    </button>
+</div>
+
+<script>
+    $("#filterForm").submit(function (e) {
+        var formData = $(this).serialize();
+        count = 0;
+        formData.split("&").forEach(function (field) {
+            parts = field.split("=");
+            value = parts[1];
+            if (parts[0] !== "view"){
+                if (value && value !== "unknown") {
+                    count++;
+                }
+            }
+        });
+        $("#filterCount").empty();
+        if (count > 0) {
+            $("#filterCount").text("(" + count + ")");
+        }
+    });
+</script>

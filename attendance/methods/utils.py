@@ -137,6 +137,10 @@ def get_diff_dict(first_dict, other_dict, model=None):
             def format_time(val):
                 if val and val != "None":
                     val += ":00" if len(val.split(":")) == 2 else ""
+                    # Handle microseconds in time string
+                    if '.' in val:
+                        # Split by decimal point and take only the time part before microseconds
+                        val = val.split('.')[0]
                     return datetime.strptime(val, "%H:%M:%S").strftime("%I:%M %p")
                 return val
 

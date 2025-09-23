@@ -3109,14 +3109,17 @@ def rotating_shift_assign_import(request):
         error_dict["Employee Error"] = []
         error_dict["Date Error"] = []
         if len(keys_list) > 4:
-            start_date = keys_list[3]
-            start_date = parser.parse(str(start_date), dayfirst=True).date()
+            try:
+                start_date = work_info_dicts[0][keys_list[3]]
+                start_date = parser.parse(str(start_date), dayfirst=True).date()
+            except:
+                start_date = None
 
         for total_rows, row in enumerate(work_info_dicts, start=1):
             employee_ids.append(row["Badge Id"])
             current_list = list(row.values())[3:]
             current_list = normalize_list(current_list)
-            if start_date < datetime.today().date():
+            if start_date and start_date < datetime.today().date():
                 error_dict["Date Error"] = "Start Date must be greater than today"
 
             if current_list not in list(

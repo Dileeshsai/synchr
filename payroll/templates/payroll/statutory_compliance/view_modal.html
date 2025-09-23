@@ -1,0 +1,159 @@
+{% load i18n %} {% load static %} {% load horillafilters %}
+{% if messages %}
+    <div class="oh-wrapper">
+        {% for message in messages %}
+        <div class="oh-alert-container">
+            <div class="oh-alert oh-alert--animated {{message.tags}}">
+                {{ message }}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    <span class="oh-span__class" hx-trigger="load" hx-get="{% url 'filter-statutory-compliance' %}?{{pd}}"
+        hx-target="#payroll-statutory-compliance-container"></span>
+{% endif %}
+{% if request.GET.instances_ids %}
+    <div class="oh-modal__dialog oh-modal__dialog--navigation m-0 p-0">
+        <button hx-get="{% url 'statutory-compliance-view' previous %}?{{pd}}&instances_ids={{statutory_compliance_ids}}"
+            hx-target = "#objectDetailsModalTarget" class="oh-modal__diaglog-nav oh-modal__nav-prev"
+            data-action="previous"
+            >
+            <ion-icon name="chevron-back-outline" class="md hydrated" role="img"
+            aria-label="chevron back outline"></ion-icon>
+        </button>
+
+        <button hx-get="{% url 'statutory-compliance-view' next  %}?{{pd}}&instances_ids={{statutory_compliance_ids}}"
+            hx-target = "#objectDetailsModalTarget" class="oh-modal__diaglog-nav oh-modal__nav-next"
+            data-action="next"
+            >
+            <ion-icon name="chevron-forward-outline" class="md hydrated" role="img"
+            aria-label="chevron forward outline"></ion-icon>
+        </button>
+    </div>
+{% endif %}
+{% if statutory_compliance %}
+<div class="oh-modal__dialog-header">
+    <span class="oh-modal__dialog-title" id="statutoryComplianceModalLabel">
+        <h5 style="margin-bottom: 20px;">{{ statutory_compliance.employee_id.get_full_name }}</h5>
+    </span>
+    <button
+        type="button"
+        class="oh-modal__close"
+        data-dismiss="oh-modal"
+        aria-label="Close"
+        data-toggle="oh-modal-toggle"
+    >
+        <ion-icon name="close-outline"></ion-icon>
+    </button>
+</div>
+
+<div class="oh-timeoff-modal__stats-container mb-3" style="padding-left: 40px;">
+    <div class="oh-timeoff-modal__stat">
+        <span class="oh-timeoff-modal__stat-title">{% trans "PF Number" %}</span>
+        <span class="oh-timeoff-modal__stat-count">{{ statutory_compliance.pf_number|default:"-" }}</span>
+    </div>
+    <div class="oh-timeoff-modal__stat" style="margin-left: 20px;">
+        <span class="oh-timeoff-modal__stat-title">{% trans "PF UAN" %}</span>
+        <span class="oh-timeoff-modal__stat-count">{{ statutory_compliance.pf_uan|default:"-" }}</span>
+    </div>
+</div>
+
+<div class="oh-timeoff-modal__stats-container mt-3 mb-3" style="padding-left: 40px;">
+    <div class="oh-timeoff-modal__stat">
+        <span class="oh-timeoff-modal__stat-title">{% trans "ESI Number" %}</span>
+        <span class="oh-timeoff-modal__stat-count">{{ statutory_compliance.esi_number|default:"-" }}</span>
+    </div>
+    <div class="oh-timeoff-modal__stat" style="margin-left: 20px;">
+        <span class="oh-timeoff-modal__stat-title">{% trans "PT Number" %}</span>
+        <span class="oh-timeoff-modal__stat-count">{{ statutory_compliance.pt_number|default:"-" }}</span>
+    </div>
+</div>
+
+<div class="oh-timeoff-modal__stats-container mt-3 mb-3" style="padding-left: 40px;">
+    <div class="oh-timeoff-modal__stat">
+        <span class="oh-timeoff-modal__stat-title">{% trans "LWF Number" %}</span>
+        <span class="oh-timeoff-modal__stat-count">{{ statutory_compliance.lwf_number|default:"-" }}</span>
+    </div>
+    <div class="oh-timeoff-modal__stat" style="margin-left: 20px;">
+        <span class="oh-timeoff-modal__stat-title">{% trans "PF Contribution" %}</span>
+        <span class="oh-timeoff-modal__stat-count">{{ statutory_compliance.pf_contribution_percentage|default:"-" }}%</span>
+    </div>
+</div>
+
+<div class="oh-timeoff-modal__stats-container mt-3 mb-3" style="padding-left: 40px;">
+    <div class="oh-timeoff-modal__stat">
+        <span class="oh-timeoff-modal__stat-title">{% trans "ESI Contribution" %}</span>
+        <span class="oh-timeoff-modal__stat-count">{{ statutory_compliance.esi_contribution_percentage|default:"-" }}%</span>
+    </div>
+    <div class="oh-timeoff-modal__stat" style="margin-left: 20px;">
+        <span class="oh-timeoff-modal__stat-title">{% trans "PT State" %}</span>
+        <span class="oh-timeoff-modal__stat-count">{{ statutory_compliance.pt_state|default:"-" }}</span>
+    </div>
+</div>
+
+<div class="oh-timeoff-modal__stats-container mt-3 mb-3" style="padding-left: 40px;">
+    <div class="oh-timeoff-modal__stat">
+        <span class="oh-timeoff-modal__stat-title">{% trans "LWF State" %}</span>
+        <span class="oh-timeoff-modal__stat-count">{{ statutory_compliance.lwf_state|default:"-" }}</span>
+    </div>
+    <div class="oh-timeoff-modal__stat" style="margin-left: 20px;">
+        <span class="oh-timeoff-modal__stat-title">{% trans "PT Amount" %}</span>
+        <span class="oh-timeoff-modal__stat-count">₹{{ statutory_compliance.pt_deduction_amount|default:"-" }}</span>
+    </div>
+</div>
+
+<div class="oh-timeoff-modal__stats-container mt-3 mb-3" style="padding-left: 40px;">
+    <div class="oh-timeoff-modal__stat">
+        <span class="oh-timeoff-modal__stat-title">{% trans "LWF Amount" %}</span>
+        <span class="oh-timeoff-modal__stat-count">₹{{ statutory_compliance.lwf_deduction_amount|default:"-" }}</span>
+    </div>
+    <div class="oh-timeoff-modal__stat" style="margin-left: 20px;">
+        <span class="oh-timeoff-modal__stat-title">{% trans "PF Nominee" %}</span>
+        <span class="oh-timeoff-modal__stat-count">{{ statutory_compliance.pf_nominee_name|default:"-" }}</span>
+    </div>
+</div>
+
+{% if perms.payroll.change_statutorycompliance or perms.payroll.delete_statutorycompliance %}
+    <div class="oh-modal__button-container text-center">
+        <div class="oh-btn-group">
+            {% if perms.payroll.change_statutorycompliance %}
+                <a href="{% url 'statutory-compliance-update' statutory_compliance.id %}" class="oh-btn oh-btn--info" style="width: 100%;">
+                <ion-icon
+                name="create-outline"
+                role="img"
+                class="md hydrated"
+                aria-label="create outline"
+                ></ion-icon>{% trans "Edit" %}
+                </a>
+            {% endif %}
+            {% if perms.payroll.delete_statutorycompliance %}
+                <button class="oh-btn oh-btn--danger" style="width: 100%;" data-action="delete"
+                    hx-confirm="{% trans 'Do you want to delete this Statutory Compliance?' %}"
+                    hx-post="{% url 'statutory-compliance-delete' statutory_compliance.id %}?{{pd}}&instances_ids={{statutory_compliance_ids}}&view=card"
+                    hx-target="#payroll-statutory-compliance-container"
+                    hx-swap="innerHTML"
+                    onclick="
+                        // Close the modal after deletion
+                        setTimeout(function() {
+                            const modal = document.querySelector('#objectDetailsModal');
+                            if (modal) {
+                                modal.style.display = 'none';
+                                modal.classList.remove('show');
+                                document.body.classList.remove('oh-modal-open');
+                            }
+                        }, 1000);
+                    ">
+                    <ion-icon name="trash-outline" role="img" class="md hydrated" aria-label="create outline"></ion-icon>
+                    {% trans "Delete" %}
+                </button>
+            {% endif %}
+        </div>
+    </div>
+{% endif %}
+{% else %}
+    <div class="oh-empty">
+        <img src="{% static 'images/ui/search.svg' %}" class="oh-404__image" alt="Page not found. 404." />
+        <h1 class="oh-empty__title">{% trans "No Records found." %}</h1>
+        <p class="oh-empty__subtitle">{% trans "There are currently no statutory compliance records to consider." %}</p>
+    </div>
+{% endif %}

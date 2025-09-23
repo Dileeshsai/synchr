@@ -1,87 +1,197 @@
-{% load i18n %}
-{% load static %}
-
-<div class="oh-table oh-table--striped">
-    <table class="oh-table__table">
-        <thead class="oh-table__thead">
-            <tr class="oh-table__tr">
-                <th class="oh-table__th">{% trans "Employee" %}</th>
-                <th class="oh-table__th">{% trans "PF Number" %}</th>
-                <th class="oh-table__th">{% trans "PF UAN" %}</th>
-                <th class="oh-table__th">{% trans "ESI Number" %}</th>
-                <th class="oh-table__th">{% trans "PT Number" %}</th>
-                <th class="oh-table__th">{% trans "Actions" %}</th>
-            </tr>
-        </thead>
-        <tbody class="oh-table__tbody">
+{% load i18n %} {% load static %}
+{% load horillafilters %}
+{% include 'filter_tags.html' %}
+{% if messages %}
+<div class="oh-wrapper">
+    {% for message in messages %}
+    <div class="oh-alert-container">
+        <div class="oh-alert oh-alert--animated {{message.tags}}">
+            {{ message }}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+{% if statutory_compliances %}
+<!-- start of column toggle -->
+<div class="oh-table_sticky--wrapper">
+    <div class="oh-sticky-dropdown--header">
+        <div class="oh-dropdown" x-data="{open: false}">
+            <button class="oh-sticky-dropdown_btn " @click="open = !open"><ion-icon name="ellipsis-vertical-sharp"
+                    role="img" class="md hydrated" aria-label="ellipsis vertical sharp"></ion-icon></button>
+            <div class="oh-dropdown__menu oh-sticky-table_dropdown" x-show="open" @click.outside="open = false">
+                <div class="oh-dropdown_btn-header">
+                    <button onclick="$(this).parent().parent().find('[type=checkbox]').prop('checked',true).change()" class="oh-btn oh-btn--success-outline">Select All Columns</button>
+                    <button onclick="$(this).parent().parent().find('[type=checkbox]').prop('checked',false).change()" class="oh-btn oh-btn--primary-outline">Unselect All Columns</button>
+                </div>
+                <ul class="oh-dropdown__items" id="statutoryComplianceCells">
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+<!-- end of column toggle -->
+<div id="statutory-compliance-column-table" data-table-name="statutory_compliance_column_tab">
+    <!-- start of sticky table -->
+    <div class="oh-sticky-table">
+        <div class="oh-sticky-table__table oh-table--sortable">
+            <div class="oh-sticky-table__thead">
+                <div class="oh-sticky-table__tr">
+                    <div class="oh-sticky-table__th {% if request.sort_option.order == '-employee_id__employee_first_name' %}arrow-up {% elif request.sort_option.order == 'employee_id__employee_first_name' %}arrow-down {% else %}arrow-up-down {% endif %}"
+                        hx-get="{% url 'filter-statutory-compliance' %}?{{pd}}&sortby=employee_id__employee_first_name"
+                        hx-target="#payroll-statutory-compliance-container">
+                        {% trans "Employee" %}
+                    </div>
+                    <div data-cell-index="1" data-cell-title="{% trans 'PF Number' %}"
+                        class="oh-sticky-table__th">{% trans "PF Number" %}</div>
+                    <div data-cell-index="2" data-cell-title="{% trans 'PF UAN' %}"
+                        class="oh-sticky-table__th">{% trans "PF UAN" %}</div>
+                    <div data-cell-index="3" data-cell-title="{% trans 'ESI Number' %}"
+                        class="oh-sticky-table__th">{% trans "ESI Number" %}</div>
+                    <div data-cell-index="4" data-cell-title="{% trans 'PT Number' %}"
+                        class="oh-sticky-table__th">{% trans "PT Number" %}</div>
+                    <div data-cell-index="5" data-cell-title="{% trans 'PT State' %}"
+                        class="oh-sticky-table__th">{% trans "PT State" %}</div>
+                    <div data-cell-index="6" data-cell-title="{% trans 'LWF Number' %}"
+                        class="oh-sticky-table__th">{% trans "LWF Number" %}</div>
+                    <div data-cell-index="7" data-cell-title="{% trans 'LWF State' %}"
+                        class="oh-sticky-table__th">{% trans "LWF State" %}</div>
+                    <div data-cell-index="8" data-cell-title="{% trans 'PAN Number' %}"
+                        class="oh-sticky-table__th">{% trans "PAN Number" %}</div>
+                    <div data-cell-index="9" data-cell-title="{% trans 'TDS Percentage' %}"
+                        class="oh-sticky-table__th">{% trans "TDS Percentage" %}</div>
+                    {% if perms.payroll.change_statutorycompliance or perms.payroll.delete_statutorycompliance %}
+                        <div class="oh-sticky-table__th oh-sticky-table__right">{% trans "Actions" %}</div>
+                    {% endif %}
+                </div>
+            </div>
             {% for statutory_compliance in statutory_compliances %}
-                <tr class="oh-table__tr">
-                    <td class="oh-table__td">
-                        <div class="d-flex align-items-center">
-                            <div class="oh-card__avatar oh-card__avatar--sm me-3">
-                                <img src="{{ statutory_compliance.employee_id.get_avatar }}" alt="Employee Avatar" class="oh-card__avatar-image">
-                            </div>
-                            <div>
-                                <h6 class="mb-0">{{ statutory_compliance.employee_id.employee_first_name }} {{ statutory_compliance.employee_id.employee_last_name }}</h6>
-                                <small class="text-muted">{{ statutory_compliance.employee_id.badge_id }}</small>
-                            </div>
-                        </div>
-                    </td>
-                    <td class="oh-table__td">
-                        {% if statutory_compliance.pf_number %}
-                            {{ statutory_compliance.pf_number }}
-                        {% else %}
-                            <span class="text-muted">-</span>
-                        {% endif %}
-                    </td>
-                    <td class="oh-table__td">
-                        {% if statutory_compliance.pf_uan %}
-                            {{ statutory_compliance.pf_uan }}
-                        {% else %}
-                            <span class="text-muted">-</span>
-                        {% endif %}
-                    </td>
-                    <td class="oh-table__td">
-                        {% if statutory_compliance.esi_number %}
-                            {{ statutory_compliance.esi_number }}
-                        {% else %}
-                            <span class="text-muted">-</span>
-                        {% endif %}
-                    </td>
-                    <td class="oh-table__td">
-                        {% if statutory_compliance.pt_number %}
-                            {{ statutory_compliance.pt_number }}
-                        {% else %}
-                            <span class="text-muted">-</span>
-                        {% endif %}
-                    </td>
-                    <td class="oh-table__td">
-                        <div class="oh-dropdown" x-data="{open: false}">
-                            <button class="oh-btn oh-btn--light" @click="open = !open">
-                                <ion-icon name="ellipsis-vertical-outline"></ion-icon>
-                            </button>
-                            <div class="oh-dropdown__menu oh-dropdown__menu--right" x-show="open" @click.outside="open = false" style="display: none">
-                                <a href="{% url 'statutory-compliance-view' statutory_compliance.id %}" class="oh-dropdown__item">
-                                    <ion-icon name="eye-outline" class="me-2"></ion-icon>
-                                    {% trans "View" %}
-                                </a>
+            <div class="oh-sticky-table__tbody ui-sortable" draggable="true" data-toggle="oh-modal-toggle"
+                data-target="#objectDetailsModal"
+                hx-get="{% url 'statutory-compliance-view' statutory_compliance.id %}?instances_ids={{statutory_compliance_ids}}"
+                hx-target="#objectDetailsModalTarget">
+                <div class="oh-sticky-table__tr ui-sortable-handle">
+                    <div class="oh-sticky-table__sd">{{statutory_compliance.employee_id.get_full_name}}</div>
+                    <div data-cell-index="1" class="oh-sticky-table__td">
+                        {% if statutory_compliance.pf_number %}{{statutory_compliance.pf_number}}{% endif %}
+                    </div>
+                    <div data-cell-index="2" class="oh-sticky-table__td">
+                        {% if statutory_compliance.pf_uan %}{{statutory_compliance.pf_uan}}{% endif %}
+                    </div>
+                    <div data-cell-index="3" class="oh-sticky-table__td">
+                        {% if statutory_compliance.esi_number %}{{statutory_compliance.esi_number}}{% endif %}
+                    </div>
+                    <div data-cell-index="4" class="oh-sticky-table__td">
+                        {% if statutory_compliance.pt_number %}{{statutory_compliance.pt_number}}{% endif %}
+                    </div>
+                    <div data-cell-index="5" class="oh-sticky-table__td">
+                        {% if statutory_compliance.pt_state %}{{statutory_compliance.pt_state}}{% endif %}
+                    </div>
+                    <div data-cell-index="6" class="oh-sticky-table__td">
+                        {% if statutory_compliance.lwf_number %}{{statutory_compliance.lwf_number}}{% endif %}
+                    </div>
+                    <div data-cell-index="7" class="oh-sticky-table__td">
+                        {% if statutory_compliance.lwf_state %}{{statutory_compliance.lwf_state}}{% endif %}
+                    </div>
+                    <div data-cell-index="8" class="oh-sticky-table__td">
+                        {% if statutory_compliance.pan_number %}{{statutory_compliance.pan_number}}{% endif %}
+                    </div>
+                    <div data-cell-index="9" class="oh-sticky-table__td">
+                        {% if statutory_compliance.tds_percentage %}{{statutory_compliance.tds_percentage}}%{% endif %}
+                    </div>
+                    {% if perms.payroll.change_statutorycompliance or perms.payroll.delete_statutorycompliance %}
+                        <div class="oh-sticky-table__td oh-sticky-table__right">
+                            <div class="oh-btn-group">
                                 {% if perms.payroll.change_statutorycompliance %}
-                                    <a href="{% url 'statutory-compliance-update' statutory_compliance.id %}" class="oh-dropdown__item">
-                                        <ion-icon name="create-outline" class="me-2"></ion-icon>
-                                        {% trans "Edit" %}
+                                    <a onclick="event.stopPropagation();" class="oh-btn oh-btn--light-bkg w-100"
+                                        href="{% url 'statutory-compliance-update' statutory_compliance.id %}" title='{% trans "Update" %}'>
+                                        <ion-icon name="create-outline" role="img" class="md hydrated" style="color: blue"
+                                            aria-label="create outline"></ion-icon>
                                     </a>
                                 {% endif %}
                                 {% if perms.payroll.delete_statutorycompliance %}
-                                    <a href="{% url 'statutory-compliance-delete' statutory_compliance.id %}" class="oh-dropdown__item oh-dropdown__item--danger">
-                                        <ion-icon name="trash-outline" class="me-2"></ion-icon>
-                                        {% trans "Delete" %}
+                                    <a class="oh-btn oh-btn--danger-outline oh-btn--light-bkg w-100"
+                                        onclick="event.preventDefault();event.stopPropagation();"
+                                        hx-confirm="{% trans 'Do you want to delete this Statutory Compliance?' %}"
+                                        hx-post="{% url 'statutory-compliance-delete' statutory_compliance.id %}?{{pd}}&view=list"
+                                        hx-target="#payroll-statutory-compliance-container" title="{% trans 'Delete' %}">
+                                        <ion-icon name="trash-outline" role="img" class="md hydrated"
+                                            aria-label="trash outline"></ion-icon>
                                     </a>
                                 {% endif %}
                             </div>
                         </div>
-                    </td>
-                </tr>
+                    {% endif %}
+                </div>
+            </div>
             {% endfor %}
-        </tbody>
-    </table>
+        </div>
+    </div>
+    <!-- end of sticky table -->
+
+    <!-- start of pagination -->
+    <div class="oh-pagination">
+        <span class="oh-pagination__page">
+            {% trans "Page" %} {{ statutory_compliances.number }} {% trans "of" %} {{ statutory_compliances.paginator.num_pages }}.
+        </span>
+        <nav class="oh-pagination__nav">
+            <div class="oh-pagination__input-container me-3">
+                <span class="oh-pagination__label me-1">{% trans "Page" %}</span>
+                <input type="number" name="page" class="oh-pagination__input" value="{{statutory_compliances.number}}"
+                    hx-get="{% url 'filter-statutory-compliance' %}?{{pd}}&view=list" hx-target="#payroll-statutory-compliance-container"
+                    min="1" />
+                <span class="oh-pagination__label">{% trans "of" %} {{statutory_compliances.paginator.num_pages}}</span>
+            </div>
+            <ul class="oh-pagination__items">
+                {% if statutory_compliances.has_previous %}
+                    <li class="oh-pagination__item oh-pagination__item--wide">
+                        <a hx-target='#payroll-statutory-compliance-container'
+                            hx-get="{% url 'filter-statutory-compliance' %}?{{pd}}&view=list&page=1"
+                            class="oh-pagination__link">
+                            {% trans "First" %}
+                        </a>
+                    </li>
+                    <li class="oh-pagination__item oh-pagination__item--wide">
+                        <a hx-target='#payroll-statutory-compliance-container'
+                            hx-get="{% url 'filter-statutory-compliance' %}?{{pd}}&view=list&page={{ statutory_compliances.previous_page_number }}"
+                            class="oh-pagination__link">{% trans "Previous" %}</a>
+                    </li>
+                {% endif %}
+                {% if statutory_compliances.has_next %}
+                    <li class="oh-pagination__item oh-pagination__item--wide">
+                        <a hx-target='#payroll-statutory-compliance-container'
+                            hx-get="{% url 'filter-statutory-compliance' %}?{{pd}}&view=list&page={{ statutory_compliances.next_page_number }}"
+                            class="oh-pagination__link">{% trans "Next" %}</a>
+                    </li>
+                    <li class="oh-pagination__item oh-pagination__item--wide">
+                        <a hx-target='#payroll-statutory-compliance-container'
+                            hx-get="{% url 'filter-statutory-compliance' %}?{{pd}}&view=list&page={{ statutory_compliances.paginator.num_pages }}"
+                            class="oh-pagination__link">{% trans "Last" %}</a>
+                    </li>
+                {% endif %}
+
+            </ul>
+        </nav>
+    </div>
+    <!-- end of pagination -->
 </div>
+{% else %}
+<!-- start of empty page -->
+<div class="oh-404">
+    <h5 class="oh-404__subtitle">
+        {% trans "No search result found!" %}
+    </h5>
+</div>
+<!-- end of empty page -->
+{% endif %}
+
+<script>
+    // toggle columns //
+    toggleColumns("statutory-compliance-column-table", "statutoryComplianceCells")
+    localStorageStatutoryComplianceCells = localStorage.getItem("statutory_compliance_column_tab")
+    if (!localStorageStatutoryComplianceCells) {
+        $("#statutoryComplianceCells").find("[type=checkbox]").prop("checked", true)
+    }
+    $("[type=checkbox]").change()
+
+</script>

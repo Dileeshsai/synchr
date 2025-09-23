@@ -30,6 +30,7 @@ from base.methods import (
     get_key_instances,
     sortby,
 )
+from horilla.methods import get_urlencode
 from base.models import Company
 from employee.models import Employee, EmployeeWorkInformation
 from horilla.decorators import (
@@ -1477,8 +1478,30 @@ def generate_payslip_pdf(template_path, context, html=False):
             "footer-center": "[page]/[topage]",  # Required to load local CSS/images
         }
 
-        # Generate the PDF as binary content
-        pdf = pdfkit.from_string(html_content, False, options=pdf_options)
+        # Configure pdfkit with wkhtmltopdf path
+        try:
+            # Try to find wkhtmltopdf in common locations
+            import os
+            wkhtmltopdf_paths = [
+                'C:\\Program Files\\wkhtmltopdf\\bin\\wkhtmltopdf.exe',
+                'C:\\Program Files (x86)\\wkhtmltopdf\\bin\\wkhtmltopdf.exe',
+                'wkhtmltopdf',  # If it's in PATH
+            ]
+            
+            config = None
+            for path in wkhtmltopdf_paths:
+                if os.path.exists(path) or path == 'wkhtmltopdf':
+                    config = pdfkit.configuration(wkhtmltopdf=path)
+                    break
+            
+            if config is None:
+                raise Exception("wkhtmltopdf not found. Please install wkhtmltopdf from https://wkhtmltopdf.org/downloads.html")
+            
+            # Generate the PDF as binary content
+            pdf = pdfkit.from_string(html_content, False, options=pdf_options, configuration=config)
+        except Exception as e:
+            # Fallback: try without configuration (in case it's in PATH)
+            pdf = pdfkit.from_string(html_content, False, options=pdf_options)
 
         # Return an HttpResponse containing the PDF content
         response = HttpResponse(pdf, content_type="application/pdf")
@@ -2001,12 +2024,17 @@ def statutory_compliance_list(request):
     # Get IDs for modal functionality
     statutory_compliance_ids = list(queryset.values_list("id", flat=True))
     
+    # Get employees for filter dropdown
+    from employee.models import Employee
+    employees = Employee.objects.all()
+    
     return render(
         request,
         "payroll/statutory_compliance/list.html",
         {
             "statutory_compliances": statutory_compliances,
             "statutory_compliance_ids": statutory_compliance_ids,
+            "employees": employees,
             "pd": request.GET.urlencode(),
         },
     )
@@ -2054,6 +2082,10 @@ def filter_statutory_compliance(request):
     # Get IDs for modal functionality
     statutory_compliance_ids = list(queryset.values_list("id", flat=True))
     
+    # Get employees for filter dropdown
+    from employee.models import Employee
+    employees = Employee.objects.all()
+    
     data_dict = parse_qs(query_string)
     get_key_instances(StatutoryCompliance, data_dict)
     
@@ -2063,6 +2095,7 @@ def filter_statutory_compliance(request):
         {
             "statutory_compliances": statutory_compliances,
             "statutory_compliance_ids": statutory_compliance_ids,
+            "employees": employees,
             "pd": query_string,
             "filter_dict": data_dict,
         },
@@ -2076,11 +2109,39 @@ def statutory_compliance_view(request, obj_id):
     View statutory compliance details
     """
     statutory_compliance = get_object_or_404(StatutoryCompliance, id=obj_id)
-    return render(
-        request,
-        "payroll/statutory_compliance/view.html",
-        {"statutory_compliance": statutory_compliance},
-    )
+    
+    # Check if this is an HTMX request (modal popup)
+    if request.headers.get('HX-Request'):
+        # Get instances_ids for navigation
+        instances_ids = request.GET.get("instances_ids")
+        if instances_ids:
+            instances_list = json.loads(instances_ids)
+            previous_instance, next_instance = closest_numbers(instances_list, obj_id)
+            context = {
+                "statutory_compliance": statutory_compliance,
+                "instances_ids": instances_ids,
+                "previous": previous_instance,
+                "next": next_instance,
+                "pd": request.GET.urlencode(),
+            }
+        else:
+            context = {
+                "statutory_compliance": statutory_compliance,
+                "pd": request.GET.urlencode(),
+            }
+        
+        return render(
+            request,
+            "payroll/statutory_compliance/view_modal.html",
+            context,
+        )
+    else:
+        # Regular page request
+        return render(
+            request,
+            "payroll/statutory_compliance/view.html",
+            {"statutory_compliance": statutory_compliance},
+        )
 
 
 @login_required
@@ -2113,13 +2174,86 @@ def statutory_compliance_delete(request, obj_id):
     """
     Delete statutory compliance
     """
+    previous_data = get_urlencode(request)
     try:
-        statutory_compliance = get_object_or_404(StatutoryCompliance, id=obj_id)
-        statutory_compliance.delete()
-        messages.success(request, _("Statutory compliance deleted successfully."))
+        statutory_compliance = StatutoryCompliance.objects.filter(id=obj_id).first()
+        if statutory_compliance:
+            statutory_compliance.delete()
+            messages.success(request, _("Statutory compliance deleted successfully"))
+        else:
+            messages.error(request, _("Statutory compliance not found"))
     except ProtectedError:
         messages.error(request, _("Cannot delete this statutory compliance."))
-    return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+    except Exception as e:
+        messages.error(request, _("An error occurred while deleting the statutory compliance"))
+        messages.error(request, str(e))
+
+    # For HTMX requests, return the updated content instead of redirecting
+    if request.headers.get('HX-Request'):
+        # Get the updated queryset
+        queryset = StatutoryCompliance.objects.all()
+        
+        # Apply search filter if exists
+        search = request.GET.get("search")
+        if search:
+            queryset = queryset.filter(
+                Q(employee_id__employee_first_name__icontains=search) |
+                Q(employee_id__employee_last_name__icontains=search) |
+                Q(pf_number__icontains=search) |
+                Q(pf_uan__icontains=search) |
+                Q(esi_number__icontains=search) |
+                Q(pt_state__icontains=search) |
+                Q(lwf_state__icontains=search)
+            )
+        
+        # Apply sorting
+        sortby = request.GET.get("sortby")
+        if sortby:
+            queryset = queryset.order_by(sortby)
+        else:
+            queryset = queryset.order_by("-id")
+        
+        # Paginate
+        page_number = request.GET.get("page")
+        statutory_compliances = paginator_qry(queryset, page_number)
+        
+        # Get IDs for modal functionality
+        statutory_compliance_ids = list(queryset.values_list("id", flat=True))
+        
+        # Get employees for filter dropdown
+        from employee.models import Employee
+        employees = Employee.objects.all()
+        
+        # Determine template based on view
+        view = request.GET.get("view", "card")
+        if view == "list":
+            template = "payroll/statutory_compliance/statutory_compliance_list.html"
+        else:
+            template = "payroll/statutory_compliance/statutory_compliance_cards.html"
+        
+        # Return the updated content
+        return render(request, template, {
+            "statutory_compliances": statutory_compliances,
+            "statutory_compliance_ids": statutory_compliance_ids,
+            "employees": employees,
+            "pd": previous_data,
+        })
+
+    # For non-HTMX requests, use the original redirect logic
+    if not StatutoryCompliance.objects.exists():
+        return HttpResponse("<script>window.location.reload();</script>")
+
+    instances_ids = request.GET.get("instances_ids")
+    if instances_ids:
+        instances_list = json.loads(instances_ids)
+        previous_instance, next_instance = closest_numbers(instances_list, obj_id)
+        if obj_id in instances_list:
+            instances_list.remove(obj_id)
+            url = f"/payroll/statutory-compliance-view/{next_instance}"
+            params = f"?{previous_data}&instances_ids={instances_list}"
+            return redirect(url + params)
+
+    return redirect(f"/payroll/filter-statutory-compliance?{previous_data}")
 
 
 @login_required

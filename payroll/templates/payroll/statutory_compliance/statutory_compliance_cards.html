@@ -1,95 +1,160 @@
-{% load i18n %}
-{% load static %}
-
-<div class="row">
+{% load i18n %} {% load static %} {% load horillafilters %}
+{% include 'filter_tags.html' %}
+{% if messages %}
+<div class="oh-wrapper">
+  {% for message in messages %}
+  <div class="oh-alert-container">
+    <div class="oh-alert oh-alert--animated {{message.tags}}">
+      {{ message }}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% if statutory_compliances %}
+  <div class="oh-layout--grid-3">
     {% for statutory_compliance in statutory_compliances %}
-        <div class="col-12 col-md-6 col-lg-4 mb-4">
-            <div class="oh-card">
-                <div class="oh-card__header">
-                    <div class="oh-card__title">
-                        <div class="d-flex align-items-center">
-                            <div class="oh-card__avatar oh-card__avatar--sm me-3">
-                                <img src="{{ statutory_compliance.employee_id.get_avatar }}" alt="Employee Avatar" class="oh-card__avatar-image">
-                            </div>
-                            <div>
-                                <h5 class="oh-card__title-text mb-0">
-                                    {{ statutory_compliance.employee_id.employee_first_name }} {{ statutory_compliance.employee_id.employee_last_name }}
-                                </h5>
-                                <p class="oh-card__subtitle mb-0">{{ statutory_compliance.employee_id.badge_id }}</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="oh-card__actions">
-                        <div class="oh-dropdown" x-data="{open: false}">
-                            <button class="oh-btn oh-btn--light" @click="open = !open">
-                                <ion-icon name="ellipsis-vertical-outline"></ion-icon>
-                            </button>
-                            <div class="oh-dropdown__menu oh-dropdown__menu--right" x-show="open" @click.outside="open = false" style="display: none">
-                                <a href="{% url 'statutory-compliance-view' statutory_compliance.id %}" class="oh-dropdown__item">
-                                    <ion-icon name="eye-outline" class="me-2"></ion-icon>
-                                    {% trans "View" %}
-                                </a>
-                                {% if perms.payroll.change_statutorycompliance %}
-                                    <a href="{% url 'statutory-compliance-update' statutory_compliance.id %}" class="oh-dropdown__item">
-                                        <ion-icon name="create-outline" class="me-2"></ion-icon>
-                                        {% trans "Edit" %}
-                                    </a>
-                                {% endif %}
-                                {% if perms.payroll.delete_statutorycompliance %}
-                                    <a href="{% url 'statutory-compliance-delete' statutory_compliance.id %}" class="oh-dropdown__item oh-dropdown__item--danger">
-                                        <ion-icon name="trash-outline" class="me-2"></ion-icon>
-                                        {% trans "Delete" %}
-                                    </a>
-                                {% endif %}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="oh-card__body">
-                    <div class="row">
-                        {% if statutory_compliance.pf_number %}
-                            <div class="col-12 mb-3">
-                                <div class="oh-info">
-                                    <span class="oh-info__label">{% trans "PF Number" %}</span>
-                                    <span class="oh-info__value">{{ statutory_compliance.pf_number }}</span>
-                                </div>
-                            </div>
-                        {% endif %}
-                        {% if statutory_compliance.pf_uan %}
-                            <div class="col-12 mb-3">
-                                <div class="oh-info">
-                                    <span class="oh-info__label">{% trans "PF UAN" %}</span>
-                                    <span class="oh-info__value">{{ statutory_compliance.pf_uan }}</span>
-                                </div>
-                            </div>
-                        {% endif %}
-                        {% if statutory_compliance.esi_number %}
-                            <div class="col-12 mb-3">
-                                <div class="oh-info">
-                                    <span class="oh-info__label">{% trans "ESI Number" %}</span>
-                                    <span class="oh-info__value">{{ statutory_compliance.esi_number }}</span>
-                                </div>
-                            </div>
-                        {% endif %}
-                        {% if statutory_compliance.pt_number %}
-                            <div class="col-12 mb-3">
-                                <div class="oh-info">
-                                    <span class="oh-info__label">{% trans "PT Number" %}</span>
-                                    <span class="oh-info__value">{{ statutory_compliance.pt_number }}</span>
-                                </div>
-                            </div>
-                        {% endif %}
-                    </div>
-                </div>
-                <div class="oh-card__footer">
-                    <div class="oh-card__footer-actions">
-                        <a href="{% url 'statutory-compliance-view' statutory_compliance.id %}" class="oh-btn oh-btn--light">
-                            <ion-icon name="eye-outline" class="me-1"></ion-icon>
-                            {% trans "View Details" %}
-                        </a>
-                    </div>
+    <div class="oh-kanban-card" data-toggle="oh-modal-toggle" data-target = "#objectDetailsModal" hx-get="{% url 'statutory-compliance-view' statutory_compliance.id %}?{{pd}}&view=card&instances_ids={{statutory_compliance_ids}}" hx-target = "#objectDetailsModalTarget">
+        <div class="oh-kanban-card__avatar">
+        <div class="oh-kanban-card__profile-container">
+            <img
+            src="https://ui-avatars.com/api/?name={{statutory_compliance.employee_id.employee_first_name|add:statutory_compliance.employee_id.employee_last_name}}&background=random"
+            class="oh-kanban-card__profile-image"
+            alt="Username"
+            />
+        </div>
+        </div>
+        <div class="oh-kanban-card__details">
+        <span class="oh-card__title oh-card__title--sm fw-bold" style="font-size:18px;">{{statutory_compliance.employee_id.employee_first_name}} {{statutory_compliance.employee_id.employee_last_name}}</span>
+
+        <span class="oh-timeoff-modal__stat-title fw-bold text-dark mt-2 mb-1">{% trans "Designation" %}</span>
+            <span class="oh-timeoff-modal__stat-title">{{statutory_compliance.employee_id.employee_work_info.job_position_id|default:"None"}}</span>
+
+        <div class="oh-timeoff-modal__stats-container mb-1">
+          <div class="oh-timeoff-modal__stat mt-2">
+            <span class="oh-timeoff-modal__stat-title fw-bold text-dark" style="width:135px;">{% trans "PF Number" %}</span>
+            {% if statutory_compliance.pf_number %}
+              <span class="oh-timeoff-modal__stat-title">{{statutory_compliance.pf_number}}</span>
+            {% else %}
+              <span class="oh-timeoff-modal__stat-title">{% trans "Not Set" %}</span>
+            {% endif %}
+          </div>
+          <div class="oh-timeoff-modal__stat mt-2">
+            <span class="oh-timeoff-modal__stat-title fw-bold text-dark">{% trans "PF UAN" %}</span>
+            {% if statutory_compliance.pf_uan %}
+              <span class="oh-timeoff-modal__stat-title">{{statutory_compliance.pf_uan}}</span>
+            {% else %}
+              <span class="oh-timeoff-modal__stat-title">{% trans "Not Set" %}</span>
+            {% endif %}
+          </div>
+          <div class="oh-timeoff-modal__stat mt-2">
+            <span class="oh-timeoff-modal__stat-title fw-bold text-dark">{% trans "ESI Number" %}</span>
+            {% if statutory_compliance.esi_number %}
+              <span class="oh-timeoff-modal__stat-title">{{statutory_compliance.esi_number}}</span>
+            {% else %}
+              <span class="oh-timeoff-modal__stat-title">{% trans "Not Set" %}</span>
+            {% endif %}
+          </div>
+          <div class="oh-timeoff-modal__stat mt-2">
+            <span class="oh-timeoff-modal__stat-title fw-bold text-dark">{% trans "PT Number" %}</span>
+            {% if statutory_compliance.pt_number %}
+              <span class="oh-timeoff-modal__stat-title">{{statutory_compliance.pt_number}}</span>
+            {% else %}
+              <span class="oh-timeoff-modal__stat-title">{% trans "Not Set" %}</span>
+            {% endif %}
+          </div>
+        </div>
+
+        </div>
+        {% if perms.payroll.change_statutorycompliance or perms.payroll.delete_statutorycompliance %}
+          <div class="oh-kanban-card__dots">
+            <div class="oh-dropdown" x-data="{show: false}" onclick="event.stopPropagation()">
+                <button
+                class="oh-btn oh-btn--transparent text-muted p-3"
+                @click="show = !show"
+                title='{% trans "Actions" %}'>
+                <ion-icon name="ellipsis-vertical-sharp"></ion-icon>
+                </button>
+                <div
+                class="oh-dropdown__menu oh-dropdown__menu--dark-border oh-dropdown__menu--right"
+                x-show="show"
+                @click.outside="show = false"
+                >
+                <ul class="oh-dropdown__items">
+                  {% if perms.payroll.change_statutorycompliance %}
+                    <li class="oh-dropdown__item">
+                    <a onclick="event.stopPropagation();"
+                      href="{% url 'statutory-compliance-update' statutory_compliance.id %}"
+                    >{% trans "Edit" %}</a>
+                    </li>
+                  {% endif %}
+                  {% if perms.payroll.delete_statutorycompliance %}
+                    <li class="oh-dropdown__item">
+                    <a class="text-danger"
+                      onclick = "event.preventDefault();event.stopPropagation();"
+                      hx-confirm="{% trans 'Do you want to delete this Statutory Compliance?' %}"
+                      hx-post="{% url 'statutory-compliance-delete' statutory_compliance.id %}?{{pd}}&view=card"
+                      hx-target="#payroll-statutory-compliance-container"
+                      title="{% trans 'Delete' %}"
+
+                    >{% trans "Delete" %}</a
+                    >
+                    </li>
+                  {% endif %}
+                </ul>
                 </div>
             </div>
-        </div>
+          </div>
+        {% endif %}
+    </div>
     {% endfor %}
+  </div>
+
+  <div class="oh-pagination">
+    <span
+      class="oh-pagination__page"
+      >
+      {% trans "Page" %} {{ statutory_compliances.number }} {% trans "of" %} {{ statutory_compliances.paginator.num_pages }}.
+      </span
+    >
+    <nav class="oh-pagination__nav">
+      <div class="oh-pagination__input-container me-3">
+        <span class="oh-pagination__label me-1">{% trans "Page" %}</span>
+        <input
+          type="number"
+          name="page"
+          class="oh-pagination__input"
+          value="{{statutory_compliances.number}}"
+          hx-get="{% url 'filter-statutory-compliance' %}?{{pd}}&view=card"
+          hx-target="#payroll-statutory-compliance-container"
+          min="1"
+        />
+        <span class="oh-pagination__label">{% trans "of" %} {{statutory_compliances.paginator.num_pages}}</span>
+      </div>
+      <ul class="oh-pagination__items">
+        {% if statutory_compliances.has_previous %}
+        <li class="oh-pagination__item oh-pagination__item--wide">
+          <a hx-target='#payroll-statutory-compliance-container' hx-get="{% url 'filter-statutory-compliance' %}?{{pd}}&view=card&page=1" class="oh-pagination__link">{% trans "First" %}</a>
+        </li>
+        <li class="oh-pagination__item oh-pagination__item--wide">
+          <a hx-target='#payroll-statutory-compliance-container' hx-get="{% url 'filter-statutory-compliance' %}?{{pd}}&view=card&page={{ statutory_compliances.previous_page_number }}" class="oh-pagination__link">{% trans "Previous" %}</a>
+        </li>
+        {% endif %}
+        {% if statutory_compliances.has_next %}
+        <li class="oh-pagination__item oh-pagination__item--wide">
+          <a hx-target='#payroll-statutory-compliance-container' hx-get="{% url 'filter-statutory-compliance' %}?{{pd}}&view=card&page={{ statutory_compliances.next_page_number }}" class="oh-pagination__link">{% trans "Next" %}</a>
+        </li>
+        <li class="oh-pagination__item oh-pagination__item--wide">
+          <a hx-target='#payroll-statutory-compliance-container' hx-get="{% url 'filter-statutory-compliance' %}?{{pd}}&view=card&page={{ statutory_compliances.paginator.num_pages }}" class="oh-pagination__link">{% trans "Last" %}</a>
+        </li>
+        {% endif %}
+
+      </ul>
+    </nav>
+  </div>
+{% else %}
+<!-- start of empty page -->
+<div class="oh-404">
 </div>
+<!-- end of empty page -->
+{% endif %}

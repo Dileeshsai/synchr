@@ -3,11 +3,17 @@
 {% load static %}
 
 {% block content %}
-<div id="statutoryComplianceFormTarget">
-    <div class="oh-wrapper d-flex justify-content-center mt-4 mb-4">
-        <form action="" hx-swap="none" class="oh-onboarding-card" method="post" enctype="multipart/form-data">
-            {% csrf_token %} {{form.as_p}}
-        </form>
+<div class="oh-wrapper">
+    <div class="oh-general__tab-target oh-profile-section">
+        <div class="oh-profile-section__card">
+            <div class="oh-profile-section__header">
+                <h3 class="oh-profile-section__title">{% trans "Create Statutory Compliance" %}</h3>
+            </div>
+            
+            <div class="oh-profile-section__body">
+                {% include "payroll/statutory_compliance/update_form.html" %}
+            </div>
+        </div>
     </div>
 </div>
 {% endblock content %}

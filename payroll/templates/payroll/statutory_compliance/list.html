@@ -54,6 +54,15 @@
                             </a>
                         </li>
                     </ul>
+                    <div class="oh-dropdown" x-data="{open: false}">
+                        <button class="oh-btn ml-2" @click="open = !open">
+                            <ion-icon name="filter" class="mr-1"></ion-icon>{% trans "Filter" %}
+                            <div id="filterCount"></div>
+                        </button>
+                        <div class="oh-dropdown__menu oh-dropdown__menu--right oh-dropdown__filter p-4" x-show="open" @click.outside="open = false">
+                            {% include 'payroll/statutory_compliance/filter_statutory_compliance.html' %}
+                        </div>
+                    </div>
                 {% endif %}
                 {% if perms.payroll.add_statutorycompliance %}
                     <div class="oh-btn-group ml-2">
@@ -70,7 +79,34 @@
         </div>
     </form>
 </section>
+<div id="filterTagContainerSectionNav" class="oh-titlebar-container__filters mb-2 mt-0 oh-wrapper"></div>
 <div class="oh-wrapper">
+    <!-- start of Quick filters  -->
+    {% if statutory_compliances %}
+        <div class="d-flex flex-row-reverse mb-2">
+            <span class="me-3" style="cursor: pointer"
+                onclick="$('[name=pf_number]').val('true');$('.filterButton').click()">
+                <span class="oh-dot oh-dot--small me-1" style="background-color: #007bff"></span>
+                {% trans "PF Number" %}
+            </span>
+            <span class="me-3" style="cursor: pointer"
+                onclick="$('[name=esi_number]').val('true');$('.filterButton').click()">
+                <span class="oh-dot oh-dot--small me-1" style="background-color: #ffc107"></span>
+                {% trans "ESI Number" %}
+            </span>
+            <span class="me-3" style="cursor: pointer"
+                onclick="$('[name=pt_number]').val('true');$('.filterButton').click()">
+                <span class="oh-dot oh-dot--small me-1" style="background-color: #dc3545"></span>
+                {% trans "PT Number" %}
+            </span>
+            <span class="me-3" style="cursor: pointer"
+                onclick="$('[name=lwf_number]').val('true');$('.filterButton').click()">
+                <span class="oh-dot oh-dot--small me-1" style="background-color: #6f42c1"></span>
+                {% trans "LWF Number" %}
+            </span>
+        </div>
+    {% endif %}
+    <!-- end of quick filters  -->
     <div id="payroll-statutory-compliance-container">
         {% if statutory_compliances %}
             {% if request.GET.view == 'list' %}
@@ -80,7 +116,6 @@
             {% endif %}
         {% else %}
             <div class="oh-empty">
-                <img src="{% static 'images/ui/search.svg' %}" class="oh-404__image" alt="Page not found. 404." />
                 <h1 class="oh-empty__title">{% trans "No Records found." %}</h1>
                 <p class="oh-empty__subtitle">{% trans "There are currently no statutory compliance records to consider." %}</p>
             </div>

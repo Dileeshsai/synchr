@@ -2,428 +2,172 @@
 {% load widget_tweaks %}
 {% load static %}
 
-<style>
-    .form-section {
-        background: #f8fafc;
-        border-radius: 8px;
-        padding: 24px;
-        margin-bottom: 24px;
-        border-left: 4px solid #3b82f6;
-    }
-    
-    .form-section h6 {
-        color: #1e40af;
-        font-weight: 600;
-        margin-bottom: 20px;
-        display: flex;
-        align-items: center;
-        font-size: 18px;
-    }
-    
-    .form-section h6 ion-icon {
-        margin-right: 8px;
-        font-size: 20px;
-    }
-    
-    .form-field {
-        margin-bottom: 20px;
-    }
-    
-    .form-field label {
-        font-weight: 500;
-        color: #374151;
-        margin-bottom: 8px;
-        display: block;
-    }
-    
-    .form-field input,
-    .form-field select {
-        border: 1px solid #d1d5db;
-        border-radius: 6px;
-        padding: 12px 16px;
-        font-size: 14px;
-        transition: all 0.2s ease;
-        width: 100%;
-    }
-    
-    .form-field input:focus,
-    .form-field select:focus {
-        outline: none;
-        border-color: #3b82f6;
-        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-    }
-    
-    .form-errors {
-        background: #fef2f2;
-        border: 1px solid #fecaca;
-        border-radius: 6px;
-        padding: 12px 16px;
-        margin-bottom: 20px;
-        color: #dc2626;
-    }
-    
-    .form-errors ul {
-        margin: 0;
-        padding-left: 20px;
-    }
-    
-    .form-actions {
-        background: #f8fafc;
-        border-radius: 8px;
-        padding: 20px;
-        margin-top: 32px;
-        text-align: right;
-        border-top: 1px solid #e5e7eb;
-    }
-    
-    .form-actions .oh-btn {
-        min-width: 120px;
-        padding: 12px 24px;
-        font-weight: 500;
-    }
-    
-    .form-header {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 24px;
-        border-radius: 8px 8px 0 0;
-        margin-bottom: 0;
-    }
-    
-    .form-header h4 {
-        margin: 0;
-        font-weight: 600;
-        display: flex;
-        align-items: center;
-    }
-    
-    .form-header ion-icon {
-        margin-right: 12px;
-        font-size: 24px;
-    }
-    
-    .form-container {
-        background: white;
-        border-radius: 8px;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-        overflow: hidden;
-    }
-</style>
-
 <div class="oh-general__tab-target oh-profile-section mb-4">
-    <div class="form-container">
-        <div class="form-header">
-            <h4>
-                <ion-icon name="shield-checkmark-outline"></ion-icon>
-                {% trans "Statutory Compliance Information" %}
-            </h4>
-        </div>
+    <div class="oh-profile-section__card">
+        <!-- Display form errors -->
+        {% if form.non_field_errors %}
+            <div class="alert alert-danger">
+                {{ form.non_field_errors }}
+            </div>
+        {% endif %}
         
-        <div class="oh-profile-section__card">
-            <!-- Display form errors -->
-            {% if form.non_field_errors %}
-                <div class="form-errors">
-                    <strong>{% trans "Please correct the following errors:" %}</strong>
-                    <ul>
-                        {% for error in form.non_field_errors %}
-                            <li>{{ error }}</li>
-                        {% endfor %}
-                    </ul>
+        <form action="" method="post" class="oh-general__form">
+            {% csrf_token %}
+            <div class="row">
+                <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                    <div class="oh-input-group">
+                        <label class="oh-label">{% trans "Employee" %}</label>
+                        {{ form.employee_id|add_class:"oh-input w-100" }}
+                        {{ form.employee_id.errors }}
+                    </div>
                 </div>
-            {% endif %}
+            </div>
             
-            <form action="" method="post" class="oh-general__form">
-                {% csrf_token %}
-                
-                <!-- Employee Selection -->
-                <div class="form-section">
-                    <h6>
-                        <ion-icon name="person-outline"></ion-icon>
-                        {% trans "Employee Selection" %}
-                    </h6>
-                    <div class="row">
-                        <div class="col-12 col-sm-12 col-md-12 col-lg-6">
-                            <div class="form-field">
-                                <label class="oh-label">{% trans "Employee" %}</label>
-                                {{ form.employee_id|add_class:"oh-input w-100" }}
-                                {% if form.employee_id.errors %}
-                                    <div class="text-danger mt-1">
-                                        {% for error in form.employee_id.errors %}
-                                            <small>{{ error }}</small>
-                                        {% endfor %}
-                                    </div>
-                                {% endif %}
-                            </div>
-                        </div>
+            <!-- PF (Provident Fund) Section -->
+            <div class="row mt-4">
+                <div class="col-12">
+                    <h6 class="oh-label mb-3">{% trans "Provident Fund (PF) Details" %}</h6>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                    <div class="oh-input-group">
+                        <label class="oh-label">{% trans "PF Number" %}</label>
+                        {{ form.pf_number }}
+                        {{ form.pf_number.errors }}
                     </div>
                 </div>
+                <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                    <div class="oh-input-group">
+                        <label class="oh-label">{% trans "PF UAN" %}</label>
+                        {{ form.pf_uan }}
+                        {{ form.pf_uan.errors }}
+                    </div>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                    <div class="oh-input-group">
+                        <label class="oh-label">{% trans "PF Contribution Percentage" %}</label>
+                        {{ form.pf_contribution_percentage }}
+                        {{ form.pf_contribution_percentage.errors }}
+                    </div>
+                </div>
+                <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                    <div class="oh-input-group">
+                        <label class="oh-label">{% trans "PF Start Date" %}</label>
+                        {{ form.pf_start_date }}
+                        {{ form.pf_start_date.errors }}
+                    </div>
+                </div>
+            </div>
             
-                <!-- PF (Provident Fund) Section -->
-                <div class="form-section">
-                    <h6>
-                        <ion-icon name="shield-checkmark-outline"></ion-icon>
-                        {% trans "Provident Fund (PF) Details" %}
-                    </h6>
-                    <div class="row">
-                        <div class="col-12 col-sm-12 col-md-12 col-lg-6">
-                            <div class="form-field">
-                                <label class="oh-label">{% trans "PF Number" %}</label>
-                                {{ form.pf_number|add_class:"oh-input w-100" }}
-                                {% if form.pf_number.errors %}
-                                    <div class="text-danger mt-1">
-                                        {% for error in form.pf_number.errors %}
-                                            <small>{{ error }}</small>
-                                        {% endfor %}
-                                    </div>
-                                {% endif %}
-                            </div>
-                        </div>
-                        <div class="col-12 col-sm-12 col-md-12 col-lg-6">
-                            <div class="form-field">
-                                <label class="oh-label">{% trans "PF UAN" %}</label>
-                                {{ form.pf_uan|add_class:"oh-input w-100" }}
-                                {% if form.pf_uan.errors %}
-                                    <div class="text-danger mt-1">
-                                        {% for error in form.pf_uan.errors %}
-                                            <small>{{ error }}</small>
-                                        {% endfor %}
-                                    </div>
-                                {% endif %}
-                            </div>
-                        </div>
-                    </div>
-                    <div class="row">
-                        <div class="col-12 col-sm-12 col-md-12 col-lg-6">
-                            <div class="form-field">
-                                <label class="oh-label">{% trans "PF Contribution Percentage" %}</label>
-                                {{ form.pf_contribution_percentage|add_class:"oh-input w-100" }}
-                                {% if form.pf_contribution_percentage.errors %}
-                                    <div class="text-danger mt-1">
-                                        {% for error in form.pf_contribution_percentage.errors %}
-                                            <small>{{ error }}</small>
-                                        {% endfor %}
-                                    </div>
-                                {% endif %}
-                            </div>
-                        </div>
-                        <div class="col-12 col-sm-12 col-md-12 col-lg-6">
-                            <div class="form-field">
-                                <label class="oh-label">{% trans "PF Voluntary Contribution" %}</label>
-                                {{ form.pf_voluntary_contribution|add_class:"oh-input w-100" }}
-                                {% if form.pf_voluntary_contribution.errors %}
-                                    <div class="text-danger mt-1">
-                                        {% for error in form.pf_voluntary_contribution.errors %}
-                                            <small>{{ error }}</small>
-                                        {% endfor %}
-                                    </div>
-                                {% endif %}
-                            </div>
-                        </div>
-                    </div>
-                    <div class="row">
-                        <div class="col-12 col-sm-12 col-md-12 col-lg-6">
-                            <div class="form-field">
-                                <label class="oh-label">{% trans "PF Nominee Name" %}</label>
-                                {{ form.pf_nominee_name|add_class:"oh-input w-100" }}
-                                {% if form.pf_nominee_name.errors %}
-                                    <div class="text-danger mt-1">
-                                        {% for error in form.pf_nominee_name.errors %}
-                                            <small>{{ error }}</small>
-                                        {% endfor %}
-                                    </div>
-                                {% endif %}
-                            </div>
-                        </div>
-                        <div class="col-12 col-sm-12 col-md-12 col-lg-6">
-                            <div class="form-field">
-                                <label class="oh-label">{% trans "PF Nominee Relation" %}</label>
-                                {{ form.pf_nominee_relation|add_class:"oh-input w-100" }}
-                                {% if form.pf_nominee_relation.errors %}
-                                    <div class="text-danger mt-1">
-                                        {% for error in form.pf_nominee_relation.errors %}
-                                            <small>{{ error }}</small>
-                                        {% endfor %}
-                                    </div>
-                                {% endif %}
-                            </div>
-                        </div>
+            <!-- ESI (Employee State Insurance) Section -->
+            <div class="row mt-4">
+                <div class="col-12">
+                    <h6 class="oh-label mb-3">{% trans "Employee State Insurance (ESI) Details" %}</h6>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                    <div class="oh-input-group">
+                        <label class="oh-label">{% trans "ESI Number" %}</label>
+                        {{ form.esi_number }}
+                        {{ form.esi_number.errors }}
                     </div>
                 </div>
+                <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                    <div class="oh-input-group">
+                        <label class="oh-label">{% trans "ESI Contribution Percentage" %}</label>
+                        {{ form.esi_contribution_percentage }}
+                        {{ form.esi_contribution_percentage.errors }}
+                    </div>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                    <div class="oh-input-group">
+                        <label class="oh-label">{% trans "ESI Start Date" %}</label>
+                        {{ form.esi_start_date }}
+                        {{ form.esi_start_date.errors }}
+                    </div>
+                </div>
+            </div>
             
-                <!-- ESI (Employee State Insurance) Section -->
-                <div class="form-section">
-                    <h6>
-                        <ion-icon name="medical-outline"></ion-icon>
-                        {% trans "Employee State Insurance (ESI) Details" %}
-                    </h6>
-                    <div class="row">
-                        <div class="col-12 col-sm-12 col-md-12 col-lg-6">
-                            <div class="form-field">
-                                <label class="oh-label">{% trans "ESI Number" %}</label>
-                                {{ form.esi_number|add_class:"oh-input w-100" }}
-                                {% if form.esi_number.errors %}
-                                    <div class="text-danger mt-1">
-                                        {% for error in form.esi_number.errors %}
-                                            <small>{{ error }}</small>
-                                        {% endfor %}
-                                    </div>
-                                {% endif %}
-                            </div>
-                        </div>
-                        <div class="col-12 col-sm-12 col-md-12 col-lg-6">
-                            <div class="form-field">
-                                <label class="oh-label">{% trans "ESI Contribution Percentage" %}</label>
-                                {{ form.esi_contribution_percentage|add_class:"oh-input w-100" }}
-                                {% if form.esi_contribution_percentage.errors %}
-                                    <div class="text-danger mt-1">
-                                        {% for error in form.esi_contribution_percentage.errors %}
-                                            <small>{{ error }}</small>
-                                        {% endfor %}
-                                    </div>
-                                {% endif %}
-                            </div>
-                        </div>
-                    </div>
-                    <div class="row">
-                        <div class="col-12 col-sm-12 col-md-12 col-lg-6">
-                            <div class="form-field">
-                                <label class="oh-label">{% trans "ESI Family Members" %}</label>
-                                {{ form.esi_family_members|add_class:"oh-input w-100" }}
-                                {% if form.esi_family_members.errors %}
-                                    <div class="text-danger mt-1">
-                                        {% for error in form.esi_family_members.errors %}
-                                            <small>{{ error }}</small>
-                                        {% endfor %}
-                                    </div>
-                                {% endif %}
-                            </div>
-                        </div>
-                        <div class="col-12 col-sm-12 col-md-12 col-lg-6">
-                            <div class="form-field">
-                                <label class="oh-label">{% trans "ESI Dispensary Code" %}</label>
-                                {{ form.esi_dispensary_code|add_class:"oh-input w-100" }}
-                                {% if form.esi_dispensary_code.errors %}
-                                    <div class="text-danger mt-1">
-                                        {% for error in form.esi_dispensary_code.errors %}
-                                            <small>{{ error }}</small>
-                                        {% endfor %}
-                                    </div>
-                                {% endif %}
-                            </div>
-                        </div>
+            <!-- Professional Tax Section -->
+            <div class="row mt-4">
+                <div class="col-12">
+                    <h6 class="oh-label mb-3">{% trans "Professional Tax Details" %}</h6>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                    <div class="oh-input-group">
+                        <label class="oh-label">{% trans "Professional Tax Number" %}</label>
+                        {{ form.professional_tax_number }}
+                        {{ form.professional_tax_number.errors }}
                     </div>
                 </div>
+                <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                    <div class="oh-input-group">
+                        <label class="oh-label">{% trans "Professional Tax Amount" %}</label>
+                        {{ form.professional_tax_amount }}
+                        {{ form.professional_tax_amount.errors }}
+                    </div>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                    <div class="oh-input-group">
+                        <label class="oh-label">{% trans "Professional Tax Start Date" %}</label>
+                        {{ form.professional_tax_start_date }}
+                        {{ form.professional_tax_start_date.errors }}
+                    </div>
+                </div>
+            </div>
             
-                <!-- Professional Tax Section -->
-                <div class="form-section">
-                    <h6>
-                        <ion-icon name="business-outline"></ion-icon>
-                        {% trans "Professional Tax Details" %}
-                    </h6>
-                    <div class="row">
-                        <div class="col-12 col-sm-12 col-md-12 col-lg-6">
-                            <div class="form-field">
-                                <label class="oh-label">{% trans "Professional Tax Number" %}</label>
-                                {{ form.pt_number|add_class:"oh-input w-100" }}
-                                {% if form.pt_number.errors %}
-                                    <div class="text-danger mt-1">
-                                        {% for error in form.pt_number.errors %}
-                                            <small>{{ error }}</small>
-                                        {% endfor %}
-                                    </div>
-                                {% endif %}
-                            </div>
-                        </div>
-                        <div class="col-12 col-sm-12 col-md-12 col-lg-6">
-                            <div class="form-field">
-                                <label class="oh-label">{% trans "Professional Tax State" %}</label>
-                                {{ form.pt_state|add_class:"oh-input w-100" }}
-                                {% if form.pt_state.errors %}
-                                    <div class="text-danger mt-1">
-                                        {% for error in form.pt_state.errors %}
-                                            <small>{{ error }}</small>
-                                        {% endfor %}
-                                    </div>
-                                {% endif %}
-                            </div>
-                        </div>
-                    </div>
-                    <div class="row">
-                        <div class="col-12 col-sm-12 col-md-12 col-lg-6">
-                            <div class="form-field">
-                                <label class="oh-label">{% trans "Professional Tax Deduction Amount" %}</label>
-                                {{ form.pt_deduction_amount|add_class:"oh-input w-100" }}
-                                {% if form.pt_deduction_amount.errors %}
-                                    <div class="text-danger mt-1">
-                                        {% for error in form.pt_deduction_amount.errors %}
-                                            <small>{{ error }}</small>
-                                        {% endfor %}
-                                    </div>
-                                {% endif %}
-                            </div>
-                        </div>
+            <!-- Income Tax Section -->
+            <div class="row mt-4">
+                <div class="col-12">
+                    <h6 class="oh-label mb-3">{% trans "Income Tax Details" %}</h6>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                    <div class="oh-input-group">
+                        <label class="oh-label">{% trans "PAN Number" %}</label>
+                        {{ form.pan_number }}
+                        {{ form.pan_number.errors }}
                     </div>
                 </div>
+                <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                    <div class="oh-input-group">
+                        <label class="oh-label">{% trans "TDS Percentage" %}</label>
+                        {{ form.tds_percentage }}
+                        {{ form.tds_percentage.errors }}
+                    </div>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                    <div class="oh-input-group">
+                        <label class="oh-label">{% trans "TDS Start Date" %}</label>
+                        {{ form.tds_start_date }}
+                        {{ form.tds_start_date.errors }}
+                    </div>
+                </div>
+            </div>
             
-                <!-- Labour Welfare Fund Section -->
-                <div class="form-section">
-                    <h6>
-                        <ion-icon name="people-outline"></ion-icon>
-                        {% trans "Labour Welfare Fund Details" %}
-                    </h6>
-                    <div class="row">
-                        <div class="col-12 col-sm-12 col-md-12 col-lg-6">
-                            <div class="form-field">
-                                <label class="oh-label">{% trans "Labour Welfare Fund Number" %}</label>
-                                {{ form.lwf_number|add_class:"oh-input w-100" }}
-                                {% if form.lwf_number.errors %}
-                                    <div class="text-danger mt-1">
-                                        {% for error in form.lwf_number.errors %}
-                                            <small>{{ error }}</small>
-                                        {% endfor %}
-                                    </div>
-                                {% endif %}
-                            </div>
-                        </div>
-                        <div class="col-12 col-sm-12 col-md-12 col-lg-6">
-                            <div class="form-field">
-                                <label class="oh-label">{% trans "Labour Welfare Fund State" %}</label>
-                                {{ form.lwf_state|add_class:"oh-input w-100" }}
-                                {% if form.lwf_state.errors %}
-                                    <div class="text-danger mt-1">
-                                        {% for error in form.lwf_state.errors %}
-                                            <small>{{ error }}</small>
-                                        {% endfor %}
-                                    </div>
-                                {% endif %}
-                            </div>
-                        </div>
-                    </div>
-                    <div class="row">
-                        <div class="col-12 col-sm-12 col-md-12 col-lg-6">
-                            <div class="form-field">
-                                <label class="oh-label">{% trans "Labour Welfare Fund Deduction Amount" %}</label>
-                                {{ form.lwf_deduction_amount|add_class:"oh-input w-100" }}
-                                {% if form.lwf_deduction_amount.errors %}
-                                    <div class="text-danger mt-1">
-                                        {% for error in form.lwf_deduction_amount.errors %}
-                                            <small>{{ error }}</small>
-                                        {% endfor %}
-                                    </div>
-                                {% endif %}
-                            </div>
-                        </div>
+            <!-- Submit Button -->
+            <div class="row mt-4">
+                <div class="col-12">
+                    <div class="d-flex justify-content-end">
+                        <button type="submit" class="oh-btn oh-btn--secondary">
+                            {% trans "Create Statutory Compliance" %}
+                        </button>
                     </div>
                 </div>
-                
-                <!-- Form Actions -->
-                <div class="form-actions">
-                    <button type="submit" class="oh-btn oh-btn--secondary">
-                        <ion-icon name="save-outline" role="img" class="md hydrated" aria-label="save outline"></ion-icon>
-                        {% trans "Save" %}
-                    </button>
-                </div>
-            </form>
-        </div>
+            </div>
+        </form>
     </div>
 </div>
