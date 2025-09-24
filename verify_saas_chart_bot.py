@@ -30,7 +30,7 @@ def test_imports():
         print("✅ All imports successful!")
         return True
     except Exception as e:
-        print(f"❌ Import error: {str(e)}")
+        print(f"Import error: {str(e)}")
         return False
 
 
