@@ -25,12 +25,16 @@ class SyncAIMiddleware(MiddlewareMixin):
             if not response.get('Content-Type', '').startswith('text/html'):
                 return response
             
-            # Skip for admin pages, API endpoints, and static files
+            # Skip for admin pages, API endpoints, static files, and authentication pages
             if (request.path.startswith('/admin/') or 
                 request.path.startswith('/api/') or
                 request.path.startswith('/chart-bot/') or
                 request.path.startswith('/static/') or
-                request.path.startswith('/media/')):
+                request.path.startswith('/media/') or
+                request.path == '/logout' or
+                request.path == '/login/' or
+                'logout' in request.path.lower() or
+                'login' in request.path.lower()):
                 return response
             
             # Always inject widget (bypass authentication check)
@@ -87,10 +91,33 @@ class SyncAIMiddleware(MiddlewareMixin):
                 bypassAuth: true,
                 startMinimized: true
             };
+            
+            // Hide chatbot on logout and login pages
+            if (window.location.pathname === '/logout' || 
+                window.location.pathname === '/login/' || 
+                window.location.pathname.includes('logout') || 
+                window.location.pathname.includes('login')) {
+                document.addEventListener('DOMContentLoaded', function() {
+                    const chatbot = document.getElementById('chart-bot-container');
+                    if (chatbot) {
+                        chatbot.style.display = 'none';
+                    }
+                });
+            }
             </script>
             
             <!-- Load Professional SYNC AI CSS -->
             <link rel="stylesheet" href="{% static 'chart_bot/css/chatbot_professional.css' %}">
+            
+            <!-- Hide chatbot on logout and login pages -->
+            <style>
+            body[data-page="logout"] #chart-bot-container,
+            body[data-page="login"] #chart-bot-container,
+            .logout-page #chart-bot-container,
+            .login-page #chart-bot-container {
+                display: none !important;
+            }
+            </style>
             
             <!-- Load Professional SYNC AI JavaScript -->
             <script src="{% static 'chart_bot/js/chatbot_professional.js' %}"></script>
