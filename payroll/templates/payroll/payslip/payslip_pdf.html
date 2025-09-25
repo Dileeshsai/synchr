@@ -22,6 +22,61 @@
           margin: 0;
         }
 
+        /* Print-friendly styles */
+        @media print {
+          @page {
+            size: A4;
+            margin: 10mm;
+          }
+          
+          body {
+            background-color: white !important;
+            font-size: 12px;
+            line-height: 1.4;
+          }
+          
+          .print-button {
+            display: none !important;
+          }
+          
+          .oh-payslip {
+            padding: 0 !important;
+            box-shadow: none !important;
+          }
+          
+          .oh-payslip-container {
+            padding: 0 !important;
+            margin: 0 !important;
+            max-width: none !important;
+          }
+        }
+
+        /* Print button styles */
+        .print-button {
+          position: fixed;
+          top: 20px;
+          right: 20px;
+          background: #007bff;
+          color: white;
+          padding: 12px 24px;
+          border: none;
+          border-radius: 6px;
+          cursor: pointer;
+          z-index: 1000;
+          font-size: 14px;
+          font-weight: 500;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+          transition: background-color 0.3s ease;
+        }
+
+        .print-button:hover {
+          background: #0056b3;
+        }
+
+        .print-button:active {
+          transform: translateY(1px);
+        }
+
         table {
           caption-side: bottom;
           border-collapse: collapse;
@@ -192,11 +247,21 @@
 
               // Restore original content
               document.body.innerHTML = originalContents;
-
             }
 
-            // Call printDiv on page load
-            window.onload = printDiv;
+            function printPDF() {
+              window.print();
+            }
+
+            // Add print button on page load
+            window.onload = function() {
+              // Create and add print button
+              const printButton = document.createElement('button');
+              printButton.className = 'print-button';
+              printButton.innerHTML = '🖨️ Print PDF';
+              printButton.onclick = printPDF;
+              document.body.appendChild(printButton);
+            };
 
       </script>
 

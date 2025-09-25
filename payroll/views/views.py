@@ -11,7 +11,7 @@ from itertools import groupby
 from urllib.parse import parse_qs
 
 import pandas as pd
-import pdfkit
+# import pdfkit  # Removed - using WeasyPrint instead
 from django.contrib import messages
 from django.db.models import ProtectedError, Q
 from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
@@ -1464,52 +1464,146 @@ def generate_payslip_pdf(template_path, context, html=False):
         if html:
             return HttpResponse(html_content, content_type="text/html")
 
-        # PDF options for pdfkit
-        pdf_options = {
-            "page-size": "A4",
-            "margin-top": "10mm",
-            "margin-bottom": "10mm",
-            "margin-left": "10mm",
-            "margin-right": "10mm",
-            "encoding": "UTF-8",
-            "enable-local-file-access": None,  # Required to load local CSS/images
-            "dpi": 300,
-            "zoom": 1.3,
-            "footer-center": "[page]/[topage]",  # Required to load local CSS/images
-        }
-
-        # Configure pdfkit with wkhtmltopdf path
+        # Try to generate PDF using xhtml2pdf (Windows-friendly)
         try:
-            # Try to find wkhtmltopdf in common locations
-            import os
-            wkhtmltopdf_paths = [
-                'C:\\Program Files\\wkhtmltopdf\\bin\\wkhtmltopdf.exe',
-                'C:\\Program Files (x86)\\wkhtmltopdf\\bin\\wkhtmltopdf.exe',
-                'wkhtmltopdf',  # If it's in PATH
-            ]
+            from xhtml2pdf import pisa
+            from io import BytesIO
             
-            config = None
-            for path in wkhtmltopdf_paths:
-                if os.path.exists(path) or path == 'wkhtmltopdf':
-                    config = pdfkit.configuration(wkhtmltopdf=path)
-                    break
+            # Create a BytesIO buffer to store the PDF
+            pdf_buffer = BytesIO()
             
-            if config is None:
-                raise Exception("wkhtmltopdf not found. Please install wkhtmltopdf from https://wkhtmltopdf.org/downloads.html")
+            # Generate PDF using xhtml2pdf
+            pisa_status = pisa.CreatePDF(html_content, dest=pdf_buffer)
             
-            # Generate the PDF as binary content
-            pdf = pdfkit.from_string(html_content, False, options=pdf_options, configuration=config)
-        except Exception as e:
-            # Fallback: try without configuration (in case it's in PATH)
-            pdf = pdfkit.from_string(html_content, False, options=pdf_options)
+            if pisa_status.err:
+                raise Exception("PDF generation failed")
+            
+            # Get the PDF content
+            pdf = pdf_buffer.getvalue()
+            pdf_buffer.close()
+            
+            # Return an HttpResponse containing the PDF content
+            response = HttpResponse(pdf, content_type="application/pdf")
+            response["Content-Disposition"] = "inline; filename=payslip.pdf"
+            return response
+            
+        except ImportError:
+            # WeasyPrint not available, return HTML with print-friendly styling
+            print_friendly_html = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <title>Payslip</title>
+                <style>
+                    @media print {{
+                        @page {{ size: A4; margin: 10mm; }}
+                        body {{ font-family: Arial, sans-serif; font-size: 12px; line-height: 1.4; }}
+                        .no-print {{ display: none !important; }}
+                        .print-button {{ display: none !important; }}
+                    }}
+                    .print-button {{
+                        position: fixed;
+                        top: 10px;
+                        right: 10px;
+                        background: #007bff;
+                        color: white;
+                        padding: 10px 20px;
+                        border: none;
+                        border-radius: 5px;
+                        cursor: pointer;
+                        z-index: 1000;
+                    }}
+                    .payslip-header {{
+                        text-align: center;
+                        border-bottom: 2px solid #000;
+                        padding-bottom: 10px;
+                        margin-bottom: 20px;
+                    }}
+                    table {{
+                        width: 100%;
+                        border-collapse: collapse;
+                        margin-bottom: 10px;
+                    }}
+                    th, td {{
+                        border: 1px solid #ddd;
+                        padding: 8px;
+                        text-align: left;
+                    }}
+                    th {{
+                        background-color: #f2f2f2;
+                        font-weight: bold;
+                    }}
+                </style>
+            </head>
+            <body>
+                <button class="print-button" onclick="window.print()">Print PDF</button>
+                {html_content}
+            </body>
+            </html>
+            """
+            return HttpResponse(print_friendly_html, content_type="text/html")
+            
+        except Exception as weasyprint_error:
+            # WeasyPrint failed, return HTML with print-friendly styling
+            print_friendly_html = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <title>Payslip</title>
+                <style>
+                    @media print {{
+                        @page {{ size: A4; margin: 10mm; }}
+                        body {{ font-family: Arial, sans-serif; font-size: 12px; line-height: 1.4; }}
+                        .no-print {{ display: none !important; }}
+                        .print-button {{ display: none !important; }}
+                    }}
+                    .print-button {{
+                        position: fixed;
+                        top: 10px;
+                        right: 10px;
+                        background: #007bff;
+                        color: white;
+                        padding: 10px 20px;
+                        border: none;
+                        border-radius: 5px;
+                        cursor: pointer;
+                        z-index: 1000;
+                    }}
+                    .payslip-header {{
+                        text-align: center;
+                        border-bottom: 2px solid #000;
+                        padding-bottom: 10px;
+                        margin-bottom: 20px;
+                    }}
+                    table {{
+                        width: 100%;
+                        border-collapse: collapse;
+                        margin-bottom: 10px;
+                    }}
+                    th, td {{
+                        border: 1px solid #ddd;
+                        padding: 8px;
+                        text-align: left;
+                    }}
+                    th {{
+                        background-color: #f2f2f2;
+                        font-weight: bold;
+                    }}
+                </style>
+            </head>
+            <body>
+                <button class="print-button" onclick="window.print()">Print PDF</button>
+                {html_content}
+            </body>
+            </html>
+            """
+            return HttpResponse(print_friendly_html, content_type="text/html")
 
-        # Return an HttpResponse containing the PDF content
-        response = HttpResponse(pdf, content_type="application/pdf")
-        response["Content-Disposition"] = "inline; filename=payslip.pdf"
-        return response
     except Exception as e:
         # Handle errors gracefully
-        return HttpResponse(f"Error generating PDF: {str(e)}", status=500)
+        return HttpResponse(f"Error generating payslip: {str(e)}", status=500)
 
 
 def payslip_pdf(request, id):

@@ -46,7 +46,7 @@ opencv-python==4.8.1.78
 openpyxl
 oscrypto
 pandas
-pdfkit
+# weasyprint  # Replaced with xhtml2pdf for better Windows compatibility
 pillow
 Pillow==10.0.1
 pycparser
