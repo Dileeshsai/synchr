@@ -30,7 +30,7 @@ env = environ.Env(
         "django-insecure-j8op9)1q8$1&0^s&p*_0%d#pr@w9qj@1o=3#@d=a(^@9@zd@%j",
     ),
     ALLOWED_HOSTS=(list, ["*"]),
-    CSRF_TRUSTED_ORIGINS=(list, ["http://localhost:8000", "http://192.168.3.186:8000"]),
+    CSRF_TRUSTED_ORIGINS=(list, ["http://localhost:8000", "http://192.168.0.5:8000"]),
 )
 
 env.read_env(os.path.join(BASE_DIR, ".env"), overwrite=True)
@@ -200,7 +200,7 @@ CSRF_COOKIE_DOMAIN = None  # Allow cross-domain for mobile app
 
 # CORS settings for mobile app
 CORS_ALLOWED_ORIGINS = [
-    "http://192.168.3.186:8000",
+    "http://192.168.0.5:8000",
     "http://localhost:8000",
     "http://127.0.0.1:8000",
     "https://app.synchrm.com",  # Production domain
@@ -373,10 +373,10 @@ CACHES = {
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'         # e.g., 'smtp.gmail.com'
 EMAIL_PORT = 587                             # or 465 for SSL
-EMAIL_HOST_USER = 'rajinin7805@gmail.com'
-EMAIL_HOST_PASSWORD = 'vbzt kcrm tknd vivz'
+EMAIL_HOST_USER = 'tanasvi77@gmail.com'
+EMAIL_HOST_PASSWORD = 'rasw nzyd mfpp advx'
 EMAIL_USE_TLS = True                         # True for TLS, False for SSL
-DEFAULT_FROM_EMAIL = 'rajinin7805@gmail.com'
+DEFAULT_FROM_EMAIL = 'tanasvi77@gmail.com'
 
 # #Email settings
 # EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'

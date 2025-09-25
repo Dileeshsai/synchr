@@ -68,7 +68,16 @@ class ClockInAPIView(APIView):
         print("========", request.user.employee_get.check_online())
         if not request.user.employee_get.check_online():
             try:
-                if request.user.employee_get.get_company().geo_fencing.start:
+                # Determine if WorkType is WFH-like; if so, skip geofence
+                is_wfh = False
+                try:
+                    wt = request.user.employee_get.employee_work_info.work_type_id
+                    wt_name = (wt.work_type or "").strip().lower() if wt else ""
+                    is_wfh = wt_name in ["work from home", "wfh", "remote"]
+                except Exception:
+                    pass
+
+                if (not is_wfh) and request.user.employee_get.get_company().geo_fencing.start:
                     from geofencing.views import GeoFencingEmployeeLocationCheckAPIView
 
                     location_api_view = GeoFencingEmployeeLocationCheckAPIView()
@@ -148,7 +157,16 @@ class ClockOutAPIView(APIView):
     def post(self, request):
 
         try:
-            if request.user.employee_get.get_company().geo_fencing.start:
+            # Determine if WorkType is WFH-like; if so, skip geofence
+            is_wfh = False
+            try:
+                wt = request.user.employee_get.employee_work_info.work_type_id
+                wt_name = (wt.work_type or "").strip().lower() if wt else ""
+                is_wfh = wt_name in ["work from home", "wfh", "remote"]
+            except Exception:
+                pass
+
+            if (not is_wfh) and request.user.employee_get.get_company().geo_fencing.start:
                 from geofencing.views import GeoFencingEmployeeLocationCheckAPIView
 
                 location_api_view = GeoFencingEmployeeLocationCheckAPIView()
