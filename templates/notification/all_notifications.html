@@ -9,6 +9,16 @@
     {% endfor %}
 </div>
 {% endif %}
+<div class="oh-activity-sidebar__header">
+    <span id="notificationClose" style="cursor: pointer;" title="{% trans 'Close' %}">
+        <ion-icon name="chevron-forward-outline"
+            class="oh-activity-sidebar__header-icon me-2 oh-activity-sidebar__close" id="close"
+            data-target="#activitySidebar" style="font-size: 24px;"></ion-icon>
+    </span>
+    <span class="oh-activity-sidebar__title"> {% trans "All Notifications" %}</span>
+    <a class="delete-all-link" hx-target="#allNotificationBody"
+        hx-post="{% url 'delete-all-notifications'%}">{% trans "Clear all" %}</a>
+</div>
 <ol class="oh-activity-sidebar__qa-list" role="list">
     {% for notification in notifications %}
     <li class="oh-activity-sidebar__qa-item" id="notificationBodyItem{{notification.id}}">

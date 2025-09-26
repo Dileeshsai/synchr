@@ -113,9 +113,6 @@
                             class="oh-activity-sidebar__header-icon me-2 oh-activity-sidebar__close" id="close"
                             data-target="#activitySidebar" style="font-size: 24px;"></ion-icon>
                     </span>
-                    <span class="oh-activity-sidebar__title"> {% trans "All Notifications" %}</span>
-                    <a class="delete-all-link" hx-target="#allNotificationBody"
-                        hx-post="{% url 'delete-all-notifications'%}">{% trans "Clear all" %}</a>
                 </div>
                 <div class="oh-activity-sidebar__body" id="allNotificationBody">
                     {% include "notification/all_notifications.html" %}
