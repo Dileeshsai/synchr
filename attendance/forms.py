@@ -1114,7 +1114,10 @@ class BulkAttendanceRequestForm(BaseModelForm):
 
     def __init__(self, *args, **kwargs):
         request = getattr(horilla_middlewares._thread_locals, "request", None)
-        employee = request.user.employee_get
+        if request and hasattr(request, 'user') and hasattr(request.user, 'employee_get'):
+            employee = request.user.employee_get
+        else:
+            employee = None
         super().__init__(*args, **kwargs)
         if employee and hasattr(employee, "employee_work_info"):
             shift = employee.employee_work_info.shift_id

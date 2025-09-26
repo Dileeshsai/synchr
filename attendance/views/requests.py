@@ -403,13 +403,18 @@ def attendance_request_changes(request, attendance_id):
 
 
 @login_required
+@manager_can_enter("attendance.view_attendance")
 def validate_attendance_request(request, attendance_id):
     """
     This method to validate the requested attendance
     args:
         attendance_id : attendance id
     """
-    attendance = Attendance.objects.get(id=attendance_id)
+    try:
+        attendance = Attendance.objects.get(id=attendance_id)
+    except Attendance.DoesNotExist:
+        messages.error(request, _("Attendance request not found"))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
     first_dict = attendance.serialize()
     empty_data = {
         "employee_id": None,
@@ -453,7 +458,11 @@ def approve_validate_attendance_request(request, attendance_id):
     """
     This method is used to validate the attendance requests
     """
-    attendance = Attendance.objects.get(id=attendance_id)
+    try:
+        attendance = Attendance.objects.get(id=attendance_id)
+    except Attendance.DoesNotExist:
+        messages.error(request, _("Attendance request not found"))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
     prev_attendance_date = attendance.attendance_date
     prev_attendance_clock_in_date = attendance.attendance_clock_in_date
     prev_attendance_clock_in = attendance.attendance_clock_in
