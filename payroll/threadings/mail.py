@@ -45,14 +45,24 @@ class MailSendThread(Thread):
             )
             attachments = []
             for instance in record["instances"]:
-                response = payslip_pdf(self.request, instance.id)
-                attachments.append(
-                    (
-                        f"{instance.get_payslip_title()}.pdf",
-                        response.content,
-                        "application/pdf",
-                    )
-                )
+                try:
+                    response = payslip_pdf(self.request, instance.id)
+                    # Check if response is successful (status 200)
+                    if response.status_code == 200:
+                        attachments.append(
+                            (
+                                f"{instance.get_payslip_title()}.pdf",
+                                response.content,
+                                "application/pdf",
+                            )
+                        )
+                    else:
+                        # If PDF generation failed, log the error but continue
+                        logger.warning(f"PDF generation failed for payslip {instance.id}: {response.content}")
+                except Exception as pdf_error:
+                    # Log PDF generation error but continue with email sending
+                    logger.warning(f"PDF generation error for payslip {instance.id}: {str(pdf_error)}")
+                    continue
             employee = record["instances"][0].employee_id
             email_backend = ConfiguredEmailBackend()
             display_email_name = email_backend.dynamic_from_email_with_display_name

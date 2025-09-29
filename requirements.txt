@@ -28,7 +28,7 @@ django-storages
 django-widget-tweaks
 djangorestframework
 djangorestframework-simplejwt
-# dlib==19.24.2  # Commented out - use alternative installation method below
+#dlib==19.24.2  # Commented out - use alternative installation method below
 drf-yasg
 et-xmlfile
 face_recognition==1.3.0
@@ -46,7 +46,7 @@ opencv-python==4.8.1.78
 openpyxl
 oscrypto
 pandas
-# weasyprint  # Replaced with xhtml2pdf for better Windows compatibility
+weasyprint  # Replaced with xhtml2pdf for better Windows compatibility
 pillow
 Pillow==10.0.1
 pycparser
@@ -84,6 +84,7 @@ XlsxWriter
 gunicorn
 psycopg2-binary
 whitenoise
+pdfkit
 
 # Chart and Visualization Dependencies
 matplotlib>=3.7.0
