@@ -1131,7 +1131,12 @@ def employee_bank_details_save(form, request, onboarding_portal):
     GET : return welcome onboard view
     """
     employee_bank_detail = form.save(commit=False)
-    employee = Employee.objects.get(employee_user_id=request.user)
+    try:
+        employee = Employee.objects.get(employee_user_id=request.user)
+    except Employee.DoesNotExist:
+        messages.error(request, _("No employee record found for this user."))
+        return redirect("onboarding-portal")
+    
     employee_bank_detail.employee_id = employee
     candidate = onboarding_portal.candidate_id
     candidate.converted_employee_id = employee

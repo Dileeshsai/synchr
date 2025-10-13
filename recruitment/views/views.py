@@ -3232,13 +3232,94 @@ def matching_resumes(request, rec_id):
 def matching_resume_completion(request):
     """
     This function is returns the data for completing the candidate creation form
+    Enhanced with AI-powered document processing using your AI server
     """
     resume_id = request.GET.get("resume_id")
     resume_obj = get_object_or_404(Resume, id=resume_id)
     resume_file = resume_obj.file
-    contact_info = extract_info(resume_file)
-
-    return JsonResponse(contact_info)
+    
+    try:
+        # Try to use AI services first
+        from employee.ai_services import DocumentAIProcessor
+        from employee.models import Employee
+        
+        # Create a temporary employee for AI processing
+        # We'll use the first employee or create a dummy one for processing
+        try:
+            temp_employee = Employee.objects.first()
+            if not temp_employee:
+                # Create a minimal employee for AI processing
+                from django.contrib.auth.models import User
+                user, created = User.objects.get_or_create(
+                    username='ai_processor',
+                    defaults={'email': 'ai@example.com'}
+                )
+                temp_employee = Employee.objects.create(
+                    employee_user_id=user,
+                    employee_first_name='AI',
+                    employee_last_name='Processor'
+                )
+        except Exception:
+            # Fallback to basic extraction
+            contact_info = extract_info(resume_file)
+            return JsonResponse(contact_info)
+        
+        # Process document with AI
+        processor = DocumentAIProcessor()
+        analysis = processor.process_document(
+            document_file=resume_file,
+            employee=temp_employee,
+            document_type='resume'
+        )
+        
+        if analysis and analysis.status == 'completed':
+            # Extract data from AI analysis
+            personal_info = analysis.personal_info or {}
+            work_info = analysis.work_info or {}
+            bank_info = analysis.bank_info or {}
+            education_info = analysis.education_info or {}
+            
+            # Map AI extracted data to recruitment form fields
+            contact_info = {
+                "full_name": personal_info.get('full_name', ''),
+                "address": personal_info.get('address', ''),
+                "country": personal_info.get('country', ''),
+                "state": personal_info.get('state', ''),
+                "phone_number": personal_info.get('phone_number', ''),
+                "dob": personal_info.get('date_of_birth', ''),
+                "email_id": personal_info.get('email', ''),
+                "zip": personal_info.get('zip_code', ''),
+                "city": personal_info.get('city', ''),
+                "gender": personal_info.get('gender', ''),
+                "portfolio": personal_info.get('portfolio', ''),
+                # Additional fields from work info
+                "experience": work_info.get('total_experience', ''),
+                "skills": work_info.get('skills', []),
+                "current_company": work_info.get('current_company', ''),
+                "current_position": work_info.get('current_position', ''),
+                # Education info
+                "education": education_info.get('certificate_name', ''),
+                "institution": education_info.get('institution', ''),
+                "course_name": education_info.get('course_name', ''),
+                "completion_date": education_info.get('completion_date', ''),
+                "grade_percentage": education_info.get('grade_percentage', ''),
+            }
+            
+            # Clean up the temporary employee if we created it
+            if temp_employee.employee_user_id.username == 'ai_processor':
+                temp_employee.employee_user_id.delete()
+                temp_employee.delete()
+            
+            return JsonResponse(contact_info)
+        else:
+            # Fallback to basic extraction if AI fails
+            contact_info = extract_info(resume_file)
+            return JsonResponse(contact_info)
+            
+    except Exception as e:
+        # Fallback to basic extraction on any error
+        contact_info = extract_info(resume_file)
+        return JsonResponse(contact_info)
 
 
 @login_required

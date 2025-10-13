@@ -134,7 +134,7 @@ def get_diff_dict(first_dict, other_dict, model=None):
             )
         elif isinstance(field, models.TimeField):
 
-            def format_time(val):
+            def format_time_field(val):
                 if val and val != "None":
                     val += ":00" if len(val.split(":")) == 2 else ""
                     # Handle microseconds in time string
@@ -144,8 +144,8 @@ def get_diff_dict(first_dict, other_dict, model=None):
                     return datetime.strptime(val, "%H:%M:%S").strftime("%I:%M %p")
                 return val
 
-            value = format_time(value)
-            other_value = format_time(other_value)
+            value = format_time_field(value)
+            other_value = format_time_field(other_value)
         elif isinstance(field, models.ForeignKey):
             value = (
                 field.related_model.objects.get(id=value)
@@ -283,6 +283,11 @@ def activity_datetime(attendance_activity):
     args:
         attendance_activity : attendance activity instance
     """
+    from datetime import datetime
+    
+    # Check if clock_out exists
+    if not attendance_activity.clock_out or not attendance_activity.clock_out_date:
+        return None, None
 
     # in
     in_year = attendance_activity.clock_in_date.year
@@ -290,14 +295,18 @@ def activity_datetime(attendance_activity):
     in_day = attendance_activity.clock_in_date.day
     in_hour = attendance_activity.clock_in.hour
     in_minute = attendance_activity.clock_in.minute
+    in_second = attendance_activity.clock_in.second if hasattr(attendance_activity.clock_in, 'second') else 0
+    
     # out
     out_year = attendance_activity.clock_out_date.year
     out_month = attendance_activity.clock_out_date.month
     out_day = attendance_activity.clock_out_date.day
     out_hour = attendance_activity.clock_out.hour
     out_minute = attendance_activity.clock_out.minute
-    return datetime(in_year, in_month, in_day, in_hour, in_minute), datetime(
-        out_year, out_month, out_day, out_hour, out_minute
+    out_second = attendance_activity.clock_out.second if hasattr(attendance_activity.clock_out, 'second') else 0
+    
+    return datetime(in_year, in_month, in_day, in_hour, in_minute, in_second), datetime(
+        out_year, out_month, out_day, out_hour, out_minute, out_second
     )
 
 

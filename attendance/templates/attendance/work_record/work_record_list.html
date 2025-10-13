@@ -143,7 +143,7 @@
                             {% elif work_record.work_record_type == 'HDP' %}
                                 background-color: #dfdf52;
                             {% elif work_record.work_record_type == 'ABS' %}
-                                background-color: #808080; color: #fff;
+                                background-color: #a8b1ff; color: #fff;
                             {% elif work_record.work_record_type == 'DFT' and work_record.shift_id and not work_record.date in leave_dates %}
                                 background-color: #a8b1ff; color: #fff;
                             {% endif %}
@@ -173,7 +173,7 @@
                                     {% if work_record.work_record_type == 'CONF' %} !
                                     {% elif work_record.work_record_type == 'FDP' %} P
                                     {% elif work_record.work_record_type == 'HDP' %} HP
-                                    {% elif work_record.work_record_type == 'ABS' %} L
+                                    {% elif work_record.work_record_type == 'ABS' %} A
                                     {% elif work_record.work_record_type == 'DFT' and work_record.shift_id and not work_record.date in leave_dates %}
                                         <span class="fw-light" style="cursor: default">A</span>
                                     {% endif %}

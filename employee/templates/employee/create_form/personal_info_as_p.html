@@ -3,7 +3,7 @@
 
 <div class="row">
     {% for field in form %}
-        {% if field.label != "Employee profile" and field.label != 'Country' and field.label != 'State' and field.label != 'Address' and field.label != 'Badge id' and field.label != 'Aadhaar Document' and field.label != 'PAN Document' %}
+        {% if field.label != "Employee profile" and field.label != 'Country' and field.label != 'State' and field.label != 'Address' and field.label != 'Badge id' and field.label != 'Aadhaar Document' and field.label != 'PAN Document' and field.label != 'Resume Document' %}
             <div class="col-lg-6">
                 <div class="oh-input__group">
                     <label class="oh-label {% if field.field.required %}required-star{% endif %}" for="id_{{ field.name }}"
@@ -53,4 +53,664 @@
         {% endif %}
     {% endfor %}
 </div>
+
+<!-- Document Upload Section -->
+<div class="row mt-3">
+    <div class="col-lg-12">
+        <h5 class="oh-label mb-3">{% trans "Documents" %}</h5>
+    </div>
+    
+    {% for field in form %}
+        {% if field.label == 'Aadhaar Document' or field.label == 'PAN Document' or field.label == 'Resume Document' %}
+            <div class="col-lg-4">
+                <div class="oh-input__group">
+                    <label class="oh-label" for="id_{{ field.name }}">
+                        {% trans field.label %}
+                        {% if field.label == 'Resume Document' %}
+                            <span class="text-muted" style="font-size: 0.85em;">(Auto-fills form)</span>
+                        {% elif field.label == 'Aadhaar Document' %}
+                            <span class="text-muted" style="font-size: 0.85em;">(Auto-fills form)</span>
+                        {% elif field.label == 'PAN Document' %}
+                            <span class="text-muted" style="font-size: 0.85em;">(Auto-fills form)</span>
+                        {% endif %}
+                    </label>
+                    {{ field|add_class:'form-control' }}
+                    {{ field.errors }}
+                    {% if field.value %}
+                        <small class="form-text text-muted">
+                            <a href="{{ field.value.url }}" target="_blank">{% trans "View current file" %}</a>
+                        </small>
+                    {% endif %}
+                    {% if field.label == 'Resume Document' %}
+                        <small id="resume-status" class="form-text"></small>
+                    {% elif field.label == 'Aadhaar Document' %}
+                        <small id="aadhaar-status" class="form-text"></small>
+                    {% elif field.label == 'PAN Document' %}
+                        <small id="pan-status" class="form-text"></small>
+                    {% endif %}
+                </div>
+            </div>
+        {% endif %}
+    {% endfor %}
+</div>
+
+<!-- JavaScript for Resume Auto-Fill -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const resumeInput = document.getElementById('id_resume_document');
+    const statusElement = document.getElementById('resume-status');
+    
+    if (resumeInput) {
+        resumeInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            // Show processing message
+            statusElement.innerHTML = '<span class="text-info"><i class="fa fa-spinner fa-spin"></i> Processing resume...</span>';
+            
+            // Create FormData and send to backend
+            const formData = new FormData();
+            formData.append('resume_file', file);
+            formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+            
+            fetch('{% url "parse-resume-auto-fill" %}', {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-CSRFToken': '{{ csrf_token }}'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Received data:', data);
+                if (data.success) {
+                    // Auto-fill form fields
+                    console.log('Auto-filling form with data:', data.data);
+                    
+                    // Debug: List all form fields
+                    console.log('Available form fields:');
+                    const allInputs = document.querySelectorAll('input, select, textarea');
+                    allInputs.forEach(field => {
+                        if (field.name && (field.name.includes('city') || field.name.includes('qualification') || field.name.includes('experience'))) {
+                            console.log(`Field: ${field.name}, ID: ${field.id}, Type: ${field.type}`);
+                        }
+                    });
+                    
+                    // Debug: Specifically check for qualification and experience fields
+                    console.log('=== DEBUGGING QUALIFICATION AND EXPERIENCE FIELDS ===');
+                    const qualField = document.getElementById('id_qualification');
+                    const expField = document.getElementById('id_experience');
+                    console.log('Qualification field found:', qualField);
+                    console.log('Experience field found:', expField);
+                    
+                    if (qualField) {
+                        console.log('Qualification field details:', {
+                            id: qualField.id,
+                            name: qualField.name,
+                            type: qualField.type,
+                            currentValue: qualField.value
+                        });
+                    }
+                    
+                    if (expField) {
+                        console.log('Experience field details:', {
+                            id: expField.id,
+                            name: expField.name,
+                            type: expField.type,
+                            currentValue: expField.value
+                        });
+                    }
+                    
+                    if (data.data.employee_first_name) {
+                        const firstNameField = document.getElementById('id_employee_first_name');
+                        if (firstNameField) {
+                            firstNameField.value = data.data.employee_first_name;
+                            console.log('Set first name:', data.data.employee_first_name);
+                        } else {
+                            console.log('First name field not found');
+                        }
+                    }
+                    if (data.data.employee_last_name) {
+                        const lastNameField = document.getElementById('id_employee_last_name');
+                        if (lastNameField) {
+                            lastNameField.value = data.data.employee_last_name;
+                            console.log('Set last name:', data.data.employee_last_name);
+                        } else {
+                            console.log('Last name field not found');
+                        }
+                    }
+                    if (data.data.email) {
+                        const emailField = document.getElementById('id_email');
+                        if (emailField) {
+                            emailField.value = data.data.email;
+                            console.log('Set email:', data.data.email);
+                        } else {
+                            console.log('Email field not found');
+                        }
+                    }
+                    if (data.data.phone) {
+                        const phoneField = document.getElementById('id_phone');
+                        if (phoneField) {
+                            phoneField.value = data.data.phone;
+                            console.log('Set phone:', data.data.phone);
+                        } else {
+                            console.log('Phone field not found');
+                        }
+                    }
+                    if (data.data.city) {
+                        const cityField = document.getElementById('id_city');
+                        if (cityField) {
+                            cityField.value = data.data.city;
+                            console.log('Set city:', data.data.city);
+                            console.log('City field value after setting:', cityField.value);
+                        } else {
+                            console.log('City field not found, trying alternative selectors...');
+                            // Try alternative selectors
+                            const altCityField = document.querySelector('input[name="city"]') || 
+                                               document.querySelector('select[name="city"]') ||
+                                               document.querySelector('#city');
+                            if (altCityField) {
+                                altCityField.value = data.data.city;
+                                console.log('Set city (alternative):', data.data.city);
+                                console.log('City field value after setting (alternative):', altCityField.value);
+                            } else {
+                                console.log('City field not found with any selector');
+                            }
+                        }
+                    } else {
+                        console.log('No city data received from server');
+                    }
+                    if (data.data.qualification) {
+                        console.log('=== PROCESSING QUALIFICATION ===');
+                        console.log('Qualification data received:', data.data.qualification);
+                        const qualField = document.getElementById('id_qualification');
+                        console.log('Qualification field found by ID:', qualField);
+                        
+                        if (qualField) {
+                            qualField.value = data.data.qualification;
+                            console.log('Set qualification:', data.data.qualification);
+                            console.log('Qualification field value after setting:', qualField.value);
+                        } else {
+                            console.log('Qualification field not found, trying alternative selectors...');
+                            const altQualField = document.querySelector('input[name="qualification"]') || 
+                                                document.querySelector('select[name="qualification"]') ||
+                                                document.querySelector('#qualification');
+                            console.log('Alternative qualification field found:', altQualField);
+                            if (altQualField) {
+                                altQualField.value = data.data.qualification;
+                                console.log('Set qualification (alternative):', data.data.qualification);
+                                console.log('Qualification field value after setting (alternative):', altQualField.value);
+                            } else {
+                                console.log('Qualification field not found with any selector');
+                            }
+                        }
+                    } else {
+                        console.log('No qualification data received from server');
+                    }
+                    if (data.data.experience) {
+                        console.log('=== PROCESSING EXPERIENCE ===');
+                        console.log('Experience data received:', data.data.experience);
+                        const expField = document.getElementById('id_experience');
+                        console.log('Experience field found by ID:', expField);
+                        
+                        if (expField) {
+                            expField.value = data.data.experience;
+                            console.log('Set experience:', data.data.experience);
+                            console.log('Experience field value after setting:', expField.value);
+                        } else {
+                            console.log('Experience field not found, trying alternative selectors...');
+                            const altExpField = document.querySelector('input[name="experience"]') || 
+                                               document.querySelector('select[name="experience"]') ||
+                                               document.querySelector('#experience');
+                            console.log('Alternative experience field found:', altExpField);
+                            if (altExpField) {
+                                altExpField.value = data.data.experience;
+                                console.log('Set experience (alternative):', data.data.experience);
+                                console.log('Experience field value after setting (alternative):', altExpField.value);
+                            } else {
+                                console.log('Experience field not found with any selector');
+                            }
+                        }
+                    } else {
+                        console.log('No experience data received from server');
+                    }
+                    
+                    // Show success message
+                    statusElement.innerHTML = `<span class="text-success"><i class="fa fa-check-circle"></i> ${data.message}</span>`;
+                    
+                    // Show notification
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Resume Parsed!',
+                        html: `Form auto-filled with extracted data.<br>Confidence: ${data.confidence.toFixed(1)}%<br><br>` + 
+                              (data.skills ? `<small><b>Skills:</b> ${data.skills}</small>` : ''),
+                        timer: 5000,
+                        timerProgressBar: true
+                    });
+                } else {
+                    statusElement.innerHTML = `<span class="text-danger"><i class="fa fa-exclamation-circle"></i> ${data.error}</span>`;
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Parsing Failed',
+                        text: data.error,
+                        timer: 3000
+                    });
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                console.error('Error details:', error.message);
+                console.error('Error stack:', error.stack);
+                statusElement.innerHTML = '<span class="text-danger"><i class="fa fa-exclamation-circle"></i> Error processing resume</span>';
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Error',
+                    text: 'Failed to process resume. Please try again.',
+                    timer: 3000
+                });
+            });
+        });
+    }
+});
+</script>
+
+<!-- JavaScript for Aadhaar Auto-Fill -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const aadhaarInput = document.getElementById('id_aadhaar_document');
+    const aadhaarStatusElement = document.getElementById('aadhaar-status');
+    
+    if (aadhaarInput) {
+        aadhaarInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            // Show processing message
+            aadhaarStatusElement.innerHTML = '<span class="text-info"><i class="fa fa-spinner fa-spin"></i> Processing Aadhaar document...</span>';
+            
+            // Create FormData and send to backend
+            const formData = new FormData();
+            formData.append('aadhaar_document', file);
+            formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+            
+            fetch('{% url "parse-aadhaar-auto-fill" %}', {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-CSRFToken': '{{ csrf_token }}'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Aadhaar parsing response:', data);
+                if (data.success) {
+                    // Auto-fill form fields
+                    console.log('Auto-filling form with Aadhaar data:', data.data);
+                    
+                    // Aadhaar number
+                    if (data.data.aadhaar_number) {
+                        const aadhaarNumberField = document.getElementById('id_aadhaar_number');
+                        if (aadhaarNumberField) {
+                            aadhaarNumberField.value = data.data.aadhaar_number;
+                            console.log('Set Aadhaar number:', data.data.aadhaar_number);
+                        }
+                    }
+                    
+                    // Name
+                    if (data.data.employee_first_name) {
+                        const firstNameField = document.getElementById('id_employee_first_name');
+                        if (firstNameField) {
+                            firstNameField.value = data.data.employee_first_name;
+                            console.log('Set first name from Aadhaar:', data.data.employee_first_name);
+                        }
+                    }
+                    
+                    // Last Name
+                    if (data.data.employee_last_name) {
+                        const lastNameField = document.getElementById('id_employee_last_name');
+                        if (lastNameField) {
+                            lastNameField.value = data.data.employee_last_name;
+                            console.log('Set last name from Aadhaar:', data.data.employee_last_name);
+                        }
+                    }
+                    
+                    // Gender
+                    if (data.data.gender) {
+                        const genderField = document.getElementById('id_gender');
+                        console.log('Gender field found:', genderField);
+                        console.log('Gender data:', data.data.gender);
+                        
+                        if (genderField) {
+                            // For dropdown/select fields, we need to find the correct option
+                            const genderOptions = genderField.querySelectorAll('option');
+                            console.log('Gender options:', genderOptions);
+                            
+                            let genderFound = false;
+                            const genderValue = data.data.gender.toLowerCase();
+                            
+                            // Try to find matching option
+                            for (let option of genderOptions) {
+                                const optionText = option.text.toLowerCase();
+                                const optionValue = option.value.toLowerCase();
+                                
+                                console.log(`Checking option: text="${optionText}", value="${optionValue}"`);
+                                
+                                // Check if option text or value matches the gender
+                                if (optionText.includes(genderValue) || 
+                                    optionValue.includes(genderValue) ||
+                                    (genderValue === 'female' && (optionText.includes('female') || optionValue.includes('female'))) ||
+                                    (genderValue === 'male' && (optionText.includes('male') || optionValue.includes('male')))) {
+                                    
+                                    genderField.value = option.value;
+                                    $(genderField).trigger('change');
+                                    console.log('Set gender from Aadhaar:', option.value, 'for gender:', data.data.gender);
+                                    genderFound = true;
+                                    break;
+                                }
+                            }
+                            
+                            if (!genderFound) {
+                                console.warn('Gender option not found, trying direct value assignment');
+                                // Fallback: try direct value assignment
+                                genderField.value = data.data.gender;
+                                $(genderField).trigger('change');
+                                console.log('Set gender from Aadhaar (fallback):', data.data.gender);
+                            }
+                        } else {
+                            console.error('Gender field not found with ID: id_gender');
+                        }
+                    }
+                    
+                    // Date of birth
+                    if (data.data.dob) {
+                        console.log('Processing DOB data:', data.data.dob);
+                        
+                        // Try multiple ways to find the DOB field
+                        let dobField = document.getElementById('id_dob');
+                        if (!dobField) {
+                            // Try alternative selectors
+                            dobField = document.querySelector('input[name="dob"]');
+                        }
+                        if (!dobField) {
+                            // Try finding by placeholder text
+                            dobField = document.querySelector('input[placeholder*="dd-mm-yyyy"]');
+                        }
+                        
+                        console.log('DOB field found:', dobField);
+                        
+                        if (dobField) {
+                            // Convert DD-MM-YYYY to YYYY-MM-DD format for Django DateField
+                            let dobValue = data.data.dob;
+                            console.log('Original DOB value:', dobValue);
+                            
+                            if (dobValue.includes('-') && dobValue.split('-')[0].length === 2) {
+                                // Convert DD-MM-YYYY to YYYY-MM-DD
+                                const parts = dobValue.split('-');
+                                dobValue = `${parts[2]}-${parts[1]}-${parts[0]}`;
+                                console.log('Converted DOB format:', dobValue);
+                            }
+                            
+                            // Set the value
+                            dobField.value = dobValue;
+                            console.log('Set date of birth from Aadhaar:', dobValue);
+                            console.log('DOB field value after setting:', dobField.value);
+                            
+                            // Try multiple ways to trigger events
+                            try {
+                                $(dobField).trigger('change');
+                                dobField.dispatchEvent(new Event('change', { bubbles: true }));
+                                dobField.dispatchEvent(new Event('input', { bubbles: true }));
+                                dobField.dispatchEvent(new Event('blur', { bubbles: true }));
+                            } catch (e) {
+                                console.log('Event triggering failed:', e);
+                            }
+                            
+                            // Force focus and blur to trigger any date picker
+                            dobField.focus();
+                            setTimeout(() => {
+                                dobField.blur();
+                            }, 100);
+                            
+                        } else {
+                            console.error('DOB field not found with any method');
+                            console.log('Available input fields:');
+                            document.querySelectorAll('input').forEach((input, index) => {
+                                console.log(`${index}: ${input.id} - ${input.name} - ${input.placeholder}`);
+                            });
+                        }
+                    } else {
+                        console.log('No DOB data in response');
+                    }
+                    
+                    // Address
+                    if (data.data.address) {
+                        const addressField = document.getElementById('id_address');
+                        if (addressField) {
+                            addressField.value = data.data.address;
+                            console.log('Set address from Aadhaar:', data.data.address);
+                        }
+                    }
+                    
+                    // City
+                    if (data.data.city) {
+                        const cityField = document.getElementById('id_city');
+                        if (cityField) {
+                            cityField.value = data.data.city;
+                            console.log('Set city from Aadhaar:', data.data.city);
+                        }
+                    }
+                    
+                    // State
+                    if (data.data.state) {
+                        const stateField = document.getElementById('id_state');
+                        if (stateField) {
+                            // For select2 dropdown, we might need to find the option and select it
+                            const stateOptions = stateField.querySelectorAll('option');
+                            let stateFound = false;
+                            for (let option of stateOptions) {
+                                if (option.text.toLowerCase().includes(data.data.state.toLowerCase()) || 
+                                    option.value.toLowerCase().includes(data.data.state.toLowerCase())) {
+                                    stateField.value = option.value;
+                                    $(stateField).trigger('change');
+                                    stateFound = true;
+                                    break;
+                                }
+                            }
+                            if (!stateFound) {
+                                stateField.value = data.data.state;
+                            }
+                            console.log('Set state from Aadhaar:', data.data.state);
+                        }
+                    }
+                    
+                    // PIN code
+                    if (data.data.zip) {
+                        const zipField = document.getElementById('id_zip');
+                        if (zipField) {
+                            zipField.value = data.data.zip;
+                            console.log('Set ZIP code from Aadhaar:', data.data.zip);
+                        }
+                    }
+                    
+                    // Show success message
+                    aadhaarStatusElement.innerHTML = `<span class="text-success"><i class="fa fa-check-circle"></i> ${data.message}</span>`;
+                    
+                    // Show notification
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Aadhaar Parsed!',
+                        html: `Form auto-filled with extracted data.<br>Confidence: ${data.confidence.toFixed(1)}%`,
+                        timer: 5000,
+                        timerProgressBar: true
+                    });
+                } else {
+                    aadhaarStatusElement.innerHTML = `<span class="text-danger"><i class="fa fa-exclamation-circle"></i> ${data.error}</span>`;
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Parsing Failed',
+                        text: data.error,
+                        timer: 3000
+                    });
+                }
+            })
+            .catch(error => {
+                console.error('Aadhaar parsing error:', error);
+                aadhaarStatusElement.innerHTML = '<span class="text-danger"><i class="fa fa-exclamation-circle"></i> Error processing Aadhaar document</span>';
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Error',
+                    text: 'Failed to process Aadhaar document. Please try again.',
+                    timer: 3000
+                });
+            });
+        });
+    }
+});
+
+// JavaScript for PAN Auto-Fill
+document.addEventListener('DOMContentLoaded', function() {
+    const panInput = document.getElementById('id_pan_document');
+    const panStatusElement = document.getElementById('pan-status');
+
+    if (panInput) {
+        panInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            panStatusElement.innerHTML = '<span class="text-info"><i class="fa fa-spinner fa-spin"></i> Processing PAN document...</span>';
+
+            const formData = new FormData();
+            formData.append('pan_document', file);
+            formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+
+            fetch('{% url "parse-pan-auto-fill" %}', {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-CSRFToken': '{{ csrf_token }}'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('PAN parsing response:', data);
+                if (data.success) {
+                    console.log('Auto-filling form with PAN data:', data.data);
+
+                    // PAN number
+                    if (data.data.pan_number) {
+                        const panNumberField = document.getElementById('id_pan_number');
+                        if (panNumberField) {
+                            panNumberField.value = data.data.pan_number;
+                            console.log('Set PAN number:', data.data.pan_number);
+                        }
+                    }
+
+                    // Name
+                    if (data.data.employee_first_name) {
+                        const firstNameField = document.getElementById('id_employee_first_name');
+                        if (firstNameField) {
+                            firstNameField.value = data.data.employee_first_name;
+                            console.log('Set first name from PAN:', data.data.employee_first_name);
+                        }
+                    }
+
+                    // Father's name
+                    if (data.data.father_name) {
+                        const fatherNameField = document.getElementById('id_father_name');
+                        if (fatherNameField) {
+                            fatherNameField.value = data.data.father_name;
+                            console.log('Set father name from PAN:', data.data.father_name);
+                        }
+                    }
+
+                    // Date of birth
+                    if (data.data.dob) {
+                        console.log('Processing DOB data from PAN:', data.data.dob);
+
+                        // Try multiple ways to find the DOB field
+                        let dobField = document.getElementById('id_dob');
+                        if (!dobField) {
+                            // Try alternative selectors
+                            dobField = document.querySelector('input[name="dob"]');
+                        }
+                        if (!dobField) {
+                            // Try finding by placeholder text
+                            dobField = document.querySelector('input[placeholder*="dd-mm-yyyy"]');
+                        }
+
+                        console.log('DOB field found:', dobField);
+
+                        if (dobField) {
+                            // Convert DD-MM-YYYY to YYYY-MM-DD format for Django DateField
+                            let dobValue = data.data.dob;
+                            console.log('Original DOB value from PAN:', dobValue);
+
+                            if (dobValue.includes('-') && dobValue.split('-')[0].length === 2) {
+                                // Convert DD-MM-YYYY to YYYY-MM-DD
+                                const parts = dobValue.split('-');
+                                dobValue = `${parts[2]}-${parts[1]}-${parts[0]}`;
+                                console.log('Converted DOB format from PAN:', dobValue);
+                            }
+
+                            // Set the value
+                            dobField.value = dobValue;
+                            console.log('Set date of birth from PAN:', dobValue);
+                            console.log('DOB field value after setting:', dobField.value);
+
+                            // Try multiple ways to trigger events
+                            try {
+                                $(dobField).trigger('change');
+                                dobField.dispatchEvent(new Event('change', { bubbles: true }));
+                                dobField.dispatchEvent(new Event('input', { bubbles: true }));
+                                dobField.dispatchEvent(new Event('blur', { bubbles: true }));
+                            } catch (e) {
+                                console.log('Event triggering failed:', e);
+                            }
+
+                            // Force focus and blur to trigger any date picker
+                            dobField.focus();
+                            setTimeout(() => {
+                                dobField.blur();
+                            }, 100);
+
+                        } else {
+                            console.error('DOB field not found with any method');
+                        }
+                    } else {
+                        console.log('No DOB data in PAN response');
+                    }
+
+                    panStatusElement.innerHTML = `<span class="text-success"><i class="fa fa-check-circle"></i> ${data.message}</span>`;
+
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'PAN Parsed!',
+                        html: `Form auto-filled with extracted data.<br>Confidence: ${data.confidence.toFixed(1)}%`,
+                        timer: 5000,
+                        timerProgressBar: true
+                    });
+                } else {
+                    panStatusElement.innerHTML = `<span class="text-danger"><i class="fa fa-exclamation-circle"></i> ${data.error}</span>`;
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Parsing Failed',
+                        text: data.error,
+                        timer: 3000
+                    });
+                }
+            })
+            .catch(error => {
+                console.error('PAN parsing error:', error);
+                panStatusElement.innerHTML = '<span class="text-danger"><i class="fa fa-exclamation-circle"></i> Error processing PAN document</span>';
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Error',
+                    text: 'Failed to process PAN document. Please try again.',
+                    timer: 3000
+                });
+            });
+        });
+    }
+});
+</script>
 

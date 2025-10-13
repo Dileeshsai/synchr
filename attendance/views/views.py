@@ -285,6 +285,10 @@ def attendance_import(request):
         HttpResponse or redirect: An HTTP response with an Excel file containing error details
         if validation fails, or a redirect to the attendance view if successful.
     """
+    attendance_dicts = []
+    attendance_import = []
+    path_info = None
+    
     if request.method == "POST":
         file = request.FILES["attendance_import"]
         file_extension = file.name.split(".")[-1].lower()
@@ -293,7 +297,6 @@ def attendance_import(request):
         )
         attendance_dicts = data_frame.to_dict("records")
         attendance_import = process_attendance_data(attendance_dicts)
-        path_info = None
         if attendance_import:
             path_info = handle_attendance_errors(attendance_import)
 
@@ -2325,14 +2328,37 @@ def work_records_change_month(request):
     ).select_related("employee_id", "shift_id", "attendance_id")
 
     work_records_dict = {(wr.employee_id.id, wr.date): wr for wr in work_records}
+    
+    # Get leave dates for the month
+    leave_dates = monthly_leave_days(month, year)
 
-    data = {
-        employee: [
-            work_records_dict.get((employee.id, current_date))
-            for current_date in month_dates
-        ]
-        for employee in employees
-    }
+    data = {}
+    for employee in employees:
+        employee_records = []
+        for current_date in month_dates:
+            work_record = work_records_dict.get((employee.id, current_date))
+            if work_record is None:
+                # Create a placeholder work record for missing dates
+                # Check if it's a holiday
+                is_holiday = current_date in leave_dates
+                if is_holiday:
+                    # Create a holiday work record
+                    work_record = WorkRecords(
+                        employee_id=employee,
+                        date=current_date,
+                        work_record_type="HD",
+                        message="Holiday/Company Leave"
+                    )
+                elif current_date < date.today():
+                    # Create an absent work record for past dates
+                    work_record = WorkRecords(
+                        employee_id=employee,
+                        date=current_date,
+                        work_record_type="ABS",
+                        message="Absent"
+                    )
+            employee_records.append(work_record)
+        data[employee] = employee_records
 
     paginator = Paginator(list(data.items()), get_pagination())
     page = paginator.get_page(request.GET.get("page"))

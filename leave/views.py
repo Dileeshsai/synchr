@@ -2787,7 +2787,21 @@ def employee_dashboard(request):
     GET : return Employee dasboard template.
     """
     today = date.today()
-    user = Employee.objects.get(employee_user_id=request.user)
+    try:
+        user = Employee.objects.get(employee_user_id=request.user)
+    except Employee.DoesNotExist:
+        # Return empty dashboard if user doesn't have an Employee record
+        context = {
+            "leave_requests": LeaveRequest.objects.none(),
+            "requested": LeaveRequest.objects.none(),
+            "approved": LeaveRequest.objects.none(),
+            "rejected": LeaveRequest.objects.none(),
+            "next_holiday": None,
+            "dashboard": "dashboard",
+            "error_message": "No employee record found for this user.",
+        }
+        return render(request, "leave/employee_dashboard.html", context)
+    
     leave_requests = LeaveRequest.objects.filter(employee_id=user)
     requested = leave_requests.filter(status="requested")
     approved = leave_requests.filter(status="approved")
@@ -2856,7 +2870,17 @@ def available_leave_chart(request):
     Returns:
     GET : return Json response of labels, dataset, message.
     """
-    user = Employee.objects.get(employee_user_id=request.user)
+    try:
+        user = Employee.objects.get(employee_user_id=request.user)
+    except Employee.DoesNotExist:
+        # Return empty response if user doesn't have an Employee record
+        response = {
+            "labels": [],
+            "dataset": [{"label": _("Total leaves available"), "data": []}],
+            "message": _("No employee record found for this user."),
+        }
+        return JsonResponse(response)
+    
     available_leaves = AvailableLeave.objects.filter(employee_id=user).exclude(
         available_days=0
     )

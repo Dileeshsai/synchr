@@ -1,7 +1,7 @@
 """
 models.py
 
-This module is used to register models for recruitment app
+This module is used to register models for attendance app
 
 """
 
@@ -287,9 +287,9 @@ class Attendance(HorillaModel):
     
     
     def __str__(self) -> str:
-     if self.employee_id is not None:
-        return f"{self.employee_id.employee_first_name} {self.employee_id.employee_last_name} - {self.attendance_date}"
-     return f"Unknown Employee - {self.attendance_date}"
+        if self.employee_id is not None:
+            return f"{self.employee_id.employee_first_name} {self.employee_id.employee_last_name} - {self.attendance_date}"
+        return f"Unknown Employee - {self.attendance_date}"
     
     def activities(self):
         """
@@ -417,7 +417,7 @@ class Attendance(HorillaModel):
             prev_state = Attendance.objects.get(pk=self.pk)
             prev_attendance_approved = prev_state.attendance_overtime_approve
 
-        # super().save(*args, **kwargs)  #commend this line, it take too much time to complete
+        # Calculate overtime before saving the attendance record
         employee_ot = None
         if self.employee_id is not None:
           employee_ot = self.employee_id.employee_overtime.filter(
@@ -511,10 +511,35 @@ class Attendance(HorillaModel):
             employee_ot.overtime = self.attendance_overtime
 
         if self.attendance_validated:
-            employee_ot.hour_account = self.attendance_worked_hour
+            employee_ot.worked_hours = self.attendance_worked_hour
 
         employee_ot.save()
         return employee_ot
+
+    def calculate_worked_hours_from_clock_times(self):
+        """
+        Calculate worked hours from clock-in and clock-out times when attendance_worked_hour is 00:00
+        """
+        if not self.attendance_clock_in or not self.attendance_clock_out:
+            return 0
+            
+        from datetime import datetime, time
+        
+        # Combine clock-in date and time
+        clock_in_datetime = datetime.combine(
+            self.attendance_clock_in_date, 
+            self.attendance_clock_in
+        )
+        
+        # Combine clock-out date and time
+        clock_out_datetime = datetime.combine(
+            self.attendance_clock_out_date, 
+            self.attendance_clock_out
+        )
+        
+        # Calculate difference
+        time_diff = clock_out_datetime - clock_in_datetime
+        return int(time_diff.total_seconds())
 
     def update_ot(self, employee_ot):
         """
@@ -550,7 +575,7 @@ class Attendance(HorillaModel):
                 attendance_validated=True,
             )
             .exclude(exclude_condition)
-            .values("minimum_hour", "at_work_second")
+            .values("minimum_hour", "at_work_second", "attendance_clock_in", "attendance_clock_out", "attendance_clock_in_date", "attendance_clock_out_date")
         )
 
         # Calculate hour balance and hours pending in a single loop
@@ -558,13 +583,36 @@ class Attendance(HorillaModel):
         minimum_hour_second = 0
         for attendance in month_attendances:
             required_work_second = strtime_seconds(attendance["minimum_hour"])
-            at_work_second = min(required_work_second, attendance["at_work_second"])
-            hour_balance += at_work_second
+            at_work_second = attendance["at_work_second"]
+            
+            # If at_work_second is 0 but we have clock-in/out times, calculate from clock times
+            if at_work_second == 0 and attendance["attendance_clock_in"] and attendance["attendance_clock_out"]:
+                from datetime import datetime
+                
+                # Combine clock-in date and time
+                clock_in_datetime = datetime.combine(
+                    attendance["attendance_clock_in_date"], 
+                    attendance["attendance_clock_in"]
+                )
+                
+                # Combine clock-out date and time
+                clock_out_datetime = datetime.combine(
+                    attendance["attendance_clock_out_date"], 
+                    attendance["attendance_clock_out"]
+                )
+                
+                # Calculate difference
+                time_diff = clock_out_datetime - clock_in_datetime
+                at_work_second = int(time_diff.total_seconds())
+            
+            # Use the minimum of required work time and actual work time
+            actual_work_second = min(required_work_second, at_work_second)
+            hour_balance += actual_work_second
             minimum_hour_second += required_work_second
 
         hours_pending = minimum_hour_second - hour_balance
         employee_ot.worked_hours = format_time(hour_balance)
-        employee_ot.pending_hours = format_time(hours_pending)
+        employee_ot.pending_hours = format_time(hours_pending if hours_pending > 0 else 0)
         employee_ot.save()
 
         return employee_ot

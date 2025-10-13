@@ -119,8 +119,16 @@ class SyncAIMiddleware(MiddlewareMixin):
             }
             </style>
             
-            <!-- Load Professional SYNC AI JavaScript -->
-            <script src="{% static 'chart_bot/js/chatbot_professional.js' %}"></script>
+            <!-- Load Professional SYNC AI JavaScript (with duplicate prevention) -->
+            <script>
+            if (!window.chartBotScriptLoaded) {
+                window.chartBotScriptLoaded = true;
+                var script = document.createElement('script');
+                script.src = '{% static 'chart_bot/js/chatbot_professional.js' %}';
+                script.async = true;
+                document.head.appendChild(script);
+            }
+            </script>
             
             <!-- Fallback test widget -->
             <script>

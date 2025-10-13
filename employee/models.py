@@ -106,9 +106,12 @@ class Employee(models.Model):
     aadhaar_document = models.FileField(upload_to=upload_path, null=True, blank=True, verbose_name=_("Aadhaar Document"))
     pan_number = models.CharField(max_length=10, null=True, blank=True, verbose_name=_("PAN Number"))
     pan_document = models.FileField(upload_to=upload_path, null=True, blank=True, verbose_name=_("PAN Document"))
-    driving_license = models.CharField(max_length=20, null=True, blank=True, verbose_name=_("Driving License"))
+    resume_document = models.FileField(upload_to=upload_path, null=True, blank=True, verbose_name=_("Resume Document"))
     passport_number = models.CharField(max_length=20, null=True, blank=True, verbose_name=_("Passport Number"))
     passport_expiry = models.DateField(null=True, blank=True, verbose_name=_("Passport Expiry"))
+    passport_issue_date = models.DateField(null=True, blank=True, verbose_name=_("Passport Issue Date"))
+    nationality = models.CharField(max_length=50, null=True, blank=True, verbose_name=_("Nationality"))
+    driving_license = models.CharField(max_length=20, null=True, blank=True, verbose_name=_("Driving License"))
     is_active = models.BooleanField(default=True)
     additional_info = models.JSONField(null=True, blank=True)
     is_from_onboarding = models.BooleanField(
@@ -469,7 +472,7 @@ class Employee(models.Model):
 
     class Meta:
         """
-        Recruitment model
+        Employee model
         """
 
         unique_together = ("employee_first_name", "employee_last_name", "email")
@@ -574,7 +577,6 @@ class EmployeeTag(HorillaModel):
     """
     EmployeeTag Model
     """
-    field_name="employee_work_info__job_position_id__title"
     title = models.CharField(max_length=50, null=True, verbose_name=_("Title"))
     color = models.CharField(max_length=30, null=True)
 
@@ -989,3 +991,6 @@ ACCESSBILITY_FEATURE.append(("gender_chart", "Can view Gender Chart"))
 ACCESSBILITY_FEATURE.append(("department_chart", "Can view Department Chart"))
 ACCESSBILITY_FEATURE.append(("employees_chart", "Can view Employees Chart"))
 ACCESSBILITY_FEATURE.append(("birthday_view", "Can view Birthdays"))
+
+# Import AI models
+from .ai_models import DocumentAIAnalysis, AIExtractionField, AIProcessingLog

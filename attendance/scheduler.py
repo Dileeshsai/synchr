@@ -9,8 +9,9 @@ from base.backends import logger
 
 
 def create_work_record():
-    from attendance.models import WorkRecords
+    from attendance.models import WorkRecords, Attendance
     from employee.models import Employee
+    from attendance.methods.utils import monthly_leave_days
 
     date = datetime.datetime.today()
     work_records = WorkRecords.objects.filter(date=date).values_list(
@@ -18,6 +19,9 @@ def create_work_record():
     )
     employees = Employee.objects.exclude(id__in=work_records)
     records_to_create = []
+    
+    # Get leave dates for the current month
+    leave_dates = monthly_leave_days(date.month, date.year)
 
     for employee in employees:
         try:
@@ -26,12 +30,33 @@ def create_work_record():
                 continue
 
             shift = employee.get_shift()
+            
+            # Check if employee has attendance for this date
+            has_attendance = Attendance.objects.filter(
+                employee_id=employee,
+                attendance_date=date
+            ).exists()
+            
+            # Check if it's a holiday/leave day
+            is_holiday = date in leave_dates
+            
+            # Determine work record type
+            if is_holiday:
+                work_record_type = "HD"  # Holiday/Company Leave
+                message = "Holiday/Company Leave"
+            elif has_attendance:
+                # If attendance exists, let the signal handle it
+                continue
+            else:
+                work_record_type = "ABS"  # Absent
+                message = "Absent"
+            
             record = WorkRecords(
                 employee_id=employee,
                 date=date,
-                work_record_type="DFT",
+                work_record_type=work_record_type,
                 shift_id=shift,
-                message="",
+                message=message,
             )
             records_to_create.append(record)
         except Exception as e:

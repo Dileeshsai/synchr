@@ -236,10 +236,65 @@
     <script src="{% static 'build/js/moment.js' %}"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.1/moment-with-locales.min.js"></script>
 
-    <script src="{% static '/base/date_settings.js' %}"></script>
-    <script src="{% static '/base/time_formatting.js' %}"></script>
-    <script src="{% static '/base/time_settings.js' %}"></script>
-    <script src="{% static '/base/date_formatting.js' %}"></script>
+    <!-- Load formatting scripts with proper order and availability check -->
+    <script>
+    if (!window.formattingScriptsLoaded) {
+        window.formattingScriptsLoaded = true;
+        
+        // Load scripts in correct order to ensure dateFormatter is available
+        var scripts = [
+            '{% static '/base/date_settings.js' %}',
+            '{% static '/base/time_formatting.js' %}',
+            '{% static '/base/time_settings.js' %}',
+            '{% static '/base/date_formatting.js' %}'
+        ];
+        
+        // Load scripts sequentially to ensure proper order
+        function loadScriptsSequentially(scriptArray, index) {
+            if (index >= scriptArray.length) {
+                // All scripts loaded, ensure dateFormatter is available
+                if (typeof dateFormatter === 'undefined') {
+                    console.warn('dateFormatter not available after loading scripts');
+                } else {
+                    console.log('dateFormatter is now available');
+                }
+                return;
+            }
+            
+            var script = document.createElement('script');
+            script.src = scriptArray[index];
+            script.onload = function() {
+                loadScriptsSequentially(scriptArray, index + 1);
+            };
+            script.onerror = function() {
+                console.error('Failed to load script:', scriptArray[index]);
+                loadScriptsSequentially(scriptArray, index + 1);
+            };
+            document.head.appendChild(script);
+        }
+        
+        loadScriptsSequentially(scripts, 0);
+    }
+    
+    // Fallback to ensure dateFormatter is available
+    window.addEventListener('DOMContentLoaded', function() {
+        if (typeof dateFormatter === 'undefined') {
+            console.warn('dateFormatter still not available, creating fallback');
+            // Create a minimal fallback dateFormatter
+            window.dateFormatter = {
+                dateFormat: 'MMM. D, YYYY',
+                getFormattedDate: function(date) {
+                    if (!date) return '';
+                    try {
+                        return moment(date).format(this.dateFormat);
+                    } catch (e) {
+                        return date;
+                    }
+                }
+            };
+        }
+    });
+    </script>
 
     <script src="{% static 'build/js/pivottable.min.js' %}"></script>
     <script src="{% static 'build/js/pivottable_plot.min.js' %}"></script>

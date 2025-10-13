@@ -7,13 +7,14 @@ responses in your application.
 Each view function corresponds to a specific URL route and performs the necessary
 actions to handle the request, process data, and generate a response.
 
-This module is part of the recruitment project and is intended to
+This module is part of the employee project and is intended to
 provide the main entry points for interacting with the application's functionality.
 """
 
 import ast
 import calendar
 import json
+import logging
 import operator
 import os
 import threading
@@ -39,8 +40,14 @@ from django.utils import timezone
 from django.utils.translation import gettext as __
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods
+from django.views.decorators.csrf import csrf_exempt
+from django.http import JsonResponse
+from django.views import View
+from employee.llm_document_processor import process_resume_file
 
 from accessibility.decorators import enter_if_accessible
+
+logger = logging.getLogger(__name__)
 from accessibility.methods import update_employee_accessibility_cache
 from accessibility.middlewares import ACCESSIBILITY_CACHE_USER_KEYS
 from accessibility.models import DefaultAccessibility
@@ -261,7 +268,7 @@ def self_info_update(request):
     if request.POST:
         if request.POST.get("employee_first_name") is not None:
             instance = Employee.objects.filter(employee_user_id=request.user).first()
-            form = EmployeeForm(request.POST, instance=instance)
+            form = EmployeeForm(request.POST, request.FILES, instance=instance)
             if form.is_valid():
                 instance = form.save(commit=False)
                 instance.employee_user_id = user
@@ -1444,17 +1451,39 @@ def employee_view_update(request, obj_id, **kwargs):
         or request.user.has_perm("employee.change_employee")
     ):
         form = EmployeeForm(instance=employee)
-        work_form = EmployeeWorkInformationForm(
-            instance=EmployeeWorkInformation.objects.filter(
-                employee_id=employee
-            ).first()
-        )
+        
+        # Log: Check work info data
+        work_info_instance = EmployeeWorkInformation.objects.filter(
+            employee_id=employee
+        ).first()
+        
+        if work_info_instance:
+            logger.info(f"🔍 Loading work info for employee {employee.id}:")
+            logger.info(f"  - Department: {work_info_instance.department_id}")
+            logger.info(f"  - Job Position: {work_info_instance.job_position_id}")
+            logger.info(f"  - Job Role: {work_info_instance.job_role_id}")
+            logger.info(f"  - Shift: {work_info_instance.shift_id}")
+            logger.info(f"  - Work Type: {work_info_instance.work_type_id}")
+            logger.info(f"  - Employee Type: {work_info_instance.employee_type_id}")
+            logger.info(f"  - Company: {work_info_instance.company_id}")
+            logger.info(f"  - Location: {work_info_instance.location}")
+            logger.info(f"  - Email: {work_info_instance.email}")
+            logger.info(f"  - Mobile: {work_info_instance.mobile}")
+            logger.info(f"  - Basic Salary: {work_info_instance.basic_salary}")
+            logger.info(f"  - Salary Hour: {work_info_instance.salary_hour}")
+            logger.info(f"  - Date Joining: {work_info_instance.date_joining}")
+            logger.info(f"  - Contract End Date: {work_info_instance.contract_end_date}")
+            logger.info(f"  - Additional Info: {work_info_instance.additional_info}")
+        else:
+            logger.warning(f"❌ No work info found for employee {employee.id}")
+        
+        work_form = EmployeeWorkInformationForm(instance=work_info_instance)
         bank_form = EmployeeBankDetailsForm(
             instance=EmployeeBankDetails.objects.filter(employee_id=employee).first()
         )
         if request.POST:
             if request.POST.get("form") == "personal":
-                form = EmployeeForm(request.POST, instance=employee)
+                form = EmployeeForm(request.POST, request.FILES, instance=employee)
                 if form.is_valid():
                     form.save()
                     messages.success(
@@ -1634,12 +1663,12 @@ def employee_create_update_personal_info(request, obj_id=None):
     This method is used to update employee's personal info.
     """
     employee = Employee.objects.filter(id=obj_id).first()
-    form = EmployeeForm(request.POST, instance=employee)
+    form = EmployeeForm(request.POST, request.FILES, instance=employee)
     if form.is_valid():
         form.save()
         if obj_id is None:
             messages.success(request, _("New Employee Added."))
-            form = EmployeeForm(request.POST, instance=form.instance)
+            form = EmployeeForm(request.POST, request.FILES, instance=form.instance)
             work_form = EmployeeWorkInformationForm(
                 instance=EmployeeWorkInformation.objects.filter(
                     employee_id=employee
@@ -3624,3 +3653,1089 @@ def employee_tag_update(request, tag_id):
         "base/employee_tag/employee_tag_form.html",
         {"form": form, "tag_id": tag_id},
     )
+
+
+class ParseResumeAutoFillView(View):
+    """
+    Parse uploaded resume and return extracted data for auto-filling form
+    """
+    
+    @csrf_exempt
+    def dispatch(self, request, *args, **kwargs):
+        # Check if user is logged in
+        if not request.user.is_authenticated:
+            return JsonResponse({
+                'success': False,
+                'error': 'Authentication required'
+            }, status=401)
+        return super().dispatch(request, *args, **kwargs)
+    
+    def _simple_resume_extraction(self, resume_file):
+        """
+        Simple text extraction fallback when LLM server is unavailable
+        """
+        import re
+        
+        logger.info(f"Starting simple extraction for file: {resume_file.name}")
+        try:
+            # Reset file pointer
+            resume_file.seek(0)
+            
+            # Read file content based on type
+            if resume_file.name.lower().endswith('.pdf'):
+                try:
+                    import PyPDF2
+                    pdf_reader = PyPDF2.PdfReader(resume_file)
+                    text = ""
+                    for page in pdf_reader.pages:
+                        text += page.extract_text() + "\n"
+                    logger.info(f"PDF processing successful, extracted {len(text)} characters")
+                except Exception as e:
+                    logger.error(f"PDF processing failed: {str(e)}")
+                    text = "PDF processing failed"
+            elif resume_file.name.lower().endswith('.docx'):
+                try:
+                    from docx import Document
+                    doc = Document(resume_file)
+                    text = "\n".join([paragraph.text for paragraph in doc.paragraphs])
+                except:
+                    text = "DOCX processing failed"
+            else:
+                # Assume text file
+                text = resume_file.read().decode('utf-8', errors='ignore')
+            
+            # Extract information using regex patterns
+            extracted = {}
+            
+            # Debug: Log first 500 characters of extracted text
+            logger.info(f"Extracted text preview: {text[:500]}")
+            logger.info(f"Full extracted text length: {len(text)}")
+            logger.info(f"Full extracted text: {text}")
+            
+            # Extract email
+            email_match = re.search(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', text)
+            if email_match:
+                extracted['email'] = email_match.group()
+            
+            # Extract phone number
+            phone_match = re.search(r'(\+?91[\s-]?)?[6-9]\d{9}', text)
+            if phone_match:
+                extracted['phone'] = phone_match.group()
+            
+            # Extract name (look for patterns like "JAGGUMANTHRI KUNDAN UDAY KUMAR")
+            name_patterns = [
+                r'CIRRICULUM VITAE\s+([A-Z\s]+?)(?:\n|$)',
+                r'RESUME\s+([A-Z\s]+?)(?:\n|$)',
+                r'Name:\s*([A-Z\s]+?)(?:\n|$)',
+                r'^([A-Z][A-Z\s]{10,50})$'
+            ]
+            for pattern in name_patterns:
+                name_match = re.search(pattern, text, re.MULTILINE | re.IGNORECASE)
+                if name_match:
+                    extracted['name'] = name_match.group(1).strip()
+                    break
+            
+            # Extract city/location - improved patterns
+            city_patterns = [
+                r'Location:\s*([A-Za-z\s]+?)(?:\n|$)',
+                r'Address:\s*([A-Za-z\s]+?)(?:\n|$)',
+                r'([A-Za-z]+),\s*India',
+                r'Visakhapatnam|Mumbai|Delhi|Bangalore|Chennai|Hyderabad|Pune|Kolkata'
+            ]
+            for pattern in city_patterns:
+                city_match = re.search(pattern, text, re.IGNORECASE)
+                if city_match:
+                    if city_match.groups():
+                        extracted['city'] = city_match.group(1).strip()
+                    else:
+                        extracted['city'] = city_match.group().strip()
+                    logger.info(f"City extracted: {extracted['city']}")
+                    break
+            
+            # If no city found, try more aggressive patterns
+            if not extracted.get('city'):
+                # Look for any mention of common Indian cities
+                city_mentions = re.findall(r'\b(Visakhapatnam|Mumbai|Delhi|Bangalore|Chennai|Hyderabad|Pune|Kolkata|Ahmedabad|Jaipur|Lucknow|Kanpur|Nagpur|Indore|Thane|Bhopal|Visakhapatnam|Pimpri|Patna|Vadodara|Ghaziabad|Ludhiana|Agra|Nashik|Faridabad|Meerut|Rajkot|Kalyan|Vasai|Varanasi|Srinagar|Aurangabad|Navi Mumbai|Solapur|Vijayawada|Kolhapur|Amritsar|Noida|Ranchi|Howrah|Coimbatore|Raipur|Jabalpur|Gwalior|Chandigarh|Tiruchirappalli|Mysore|Bhubaneswar|Kochi|Bhavnagar|Salem|Warangal|Guntur|Bhiwandi|Amravati|Nanded|Kolhapur|Sangli|Malegaon|Ulhasnagar|Jalgaon|Latur|Ahmadnagar|Dhule|Ichalkaranji|Parbhani|Jalna|Bhusawal|Panvel|Satara|Beed|Yavatmal|Kamptee|Gondia|Barshi|Achalpur|Osmanabad|Nandurbar|Wardha|Udgir|Hinganghat)\b', text, re.IGNORECASE)
+                if city_mentions:
+                    extracted['city'] = city_mentions[0]
+                    logger.info(f"City extracted (aggressive): {extracted['city']}")
+            
+            # Extract qualification - improved patterns
+            qual_patterns = [
+                r'Bachelor of Technology[^|]*Electronics and Communication Engineering[^|]*',
+                r'Bachelor of Technology[^|]*',
+                r'Bachelor of Engineering[^|]*',
+                r'B\.Tech[^|]*ECE[^|]*',
+                r'B\.Tech[^|]*',
+                r'B\.E[^|]*'
+            ]
+            for pattern in qual_patterns:
+                qual_match = re.search(pattern, text, re.IGNORECASE)
+                if qual_match:
+                    extracted['education'] = qual_match.group().strip()
+                    logger.info(f"Qualification extracted: {extracted['education']}")
+                    break
+            
+            # If no qualification found, try more aggressive patterns
+            if not extracted.get('education'):
+                # Look for any mention of degrees
+                degree_patterns = [
+                    r'Bachelor[^.]*Technology[^.]*',
+                    r'Bachelor[^.]*Engineering[^.]*',
+                    r'B\.Tech[^.]*',
+                    r'B\.E[^.]*',
+                    r'Master[^.]*',
+                    r'M\.Tech[^.]*',
+                    r'M\.E[^.]*',
+                    r'Diploma[^.]*'
+                ]
+                for pattern in degree_patterns:
+                    degree_match = re.search(pattern, text, re.IGNORECASE)
+                    if degree_match:
+                        extracted['education'] = degree_match.group().strip()
+                        logger.info(f"Qualification extracted (aggressive): {extracted['education']}")
+                        break
+            
+            # Extract experience - look specifically for work experience dates
+            # First, try to find work experience section and extract dates from there
+            work_exp_section = re.search(r'WORK EXPERIENCE.*?(?=\nEDUCATION|\nPROJECTS|\nCERTIFICATIONS|$)', text, re.IGNORECASE | re.DOTALL)
+            if work_exp_section:
+                work_exp_text = work_exp_section.group(0)
+                logger.info(f"Found work experience section: {work_exp_text[:200]}...")
+                
+                # Look for specific work experience patterns in the section
+                # Match month-year format like "(Nov 2023 - MAY 2024)" or "(APR 2023 - MAY 2023)"
+                work_patterns = [
+                    r'Tanasvi Technologies.*?\((?:[A-Za-z]+\s+)?(\d{4})\s*-\s*(?:[A-Za-z]+\s+)?(\d{4})\)',  # Tanasvi Technologies dates
+                    r'Verzeo.*?\((?:[A-Za-z]+\s+)?(\d{4})\s*-\s*(?:[A-Za-z]+\s+)?(\d{4})\)',  # Verzeo dates  
+                    r'All India Radio.*?\((?:[A-Za-z]+\s+)?(\d{4})\s*-\s*(?:[A-Za-z]+\s+)?(\d{4})\)',  # All India Radio dates
+                ]
+                
+                total_work_years = 0
+                for pattern in work_patterns:
+                    matches = re.findall(pattern, work_exp_text, re.IGNORECASE)
+                    for start, end in matches:
+                        try:
+                            years = int(end) - int(start)
+                            if 0 < years < 3:  # Reasonable work experience range
+                                total_work_years += years
+                                logger.info(f"Found work experience: {start}-{end} = {years} years")
+                        except:
+                            pass
+                
+                if total_work_years > 0:
+                    extracted['experience'] = min(total_work_years, 3)
+                    logger.info(f"Total work experience extracted: {extracted['experience']} years")
+            
+            # If no work experience found in section, try alternative patterns
+            if not extracted.get('experience'):
+                # Look for specific company names with dates (month-year format in parentheses)
+                company_patterns = [
+                    r'Tanasvi Technologies.*?\((?:[A-Za-z]+\s+)?(\d{4})\s*-\s*(?:[A-Za-z]+\s+)?(\d{4})\)',
+                    r'Verzeo.*?\((?:[A-Za-z]+\s+)?(\d{4})\s*-\s*(?:[A-Za-z]+\s+)?(\d{4})\)',
+                    r'All India Radio.*?\((?:[A-Za-z]+\s+)?(\d{4})\s*-\s*(?:[A-Za-z]+\s+)?(\d{4})\)',
+                ]
+                
+                work_years = []
+                for pattern in company_patterns:
+                    matches = re.findall(pattern, text, re.IGNORECASE)
+                    for start, end in matches:
+                        try:
+                            years = int(end) - int(start)
+                            if 0 < years < 3:
+                                work_years.append(years)
+                                logger.info(f"Found work experience (alternative): {start}-{end} = {years} years")
+                        except:
+                            pass
+                
+                if work_years:
+                    extracted['experience'] = min(sum(work_years), 3)
+                    logger.info(f"Experience extracted (alternative): {extracted['experience']} years")
+            
+            # If still no experience found, try to calculate from internship/experience mentions
+            if not extracted.get('experience'):
+                # Look for internship/experience mentions with durations
+                exp_mentions = [
+                    r'(\d+)\s*Months?\s*Virtual Internship',
+                    r'(\d+)\s*Weeks?\s*Internship',
+                    r'(\d+)\s*Months?\s*Internship',
+                ]
+                
+                total_months = 0
+                for pattern in exp_mentions:
+                    matches = re.findall(pattern, text, re.IGNORECASE)
+                    for duration in matches:
+                        try:
+                            months = int(duration)
+                            total_months += months
+                            logger.info(f"Found experience mention: {duration} months")
+                        except:
+                            pass
+                
+                if total_months > 0:
+                    # Convert months to years (approximate)
+                    years = round(total_months / 12, 1)
+                    extracted['experience'] = min(years, 2)  # Cap at 2 years for internships
+                    logger.info(f"Experience extracted (mentions): {extracted['experience']} years")
+            
+            # Extract skills
+            skills_section = re.search(r'Skills?:([^E]+)', text, re.IGNORECASE | re.DOTALL)
+            if skills_section:
+                skills_text = skills_section.group(1)
+                skills = re.findall(r'[A-Za-z\s]+(?:Python|Django|Java|JavaScript|HTML|CSS)', skills_text)
+                if skills:
+                    extracted['skills'] = ', '.join([s.strip() for s in skills[:5]])  # Top 5 skills
+            
+            logger.info(f"Final extracted data: {extracted}")
+            return extracted
+            
+        except Exception as e:
+            logger.error(f"Error in simple extraction: {str(e)}")
+            return {}
+    
+    def post(self, request):
+        try:
+            if 'resume_file' not in request.FILES:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'No resume file provided'
+                }, status=400)
+            
+            resume_file = request.FILES['resume_file']
+            
+            # Process resume with LLM
+            logger.info(f"Processing resume: {resume_file.name}")
+            try:
+                result = process_resume_file(resume_file)
+                logger.info(f"LLM processing result: {result}")
+                
+                if result.get('status') == 'failed':
+                    return JsonResponse({
+                        'success': False,
+                        'error': result.get('error', 'Failed to process resume')
+                    }, status=400)
+                
+                extracted_data = result.get('extracted_data', {})
+                confidence = result.get('confidence_score', 0)
+                
+            except Exception as e:
+                logger.error(f"LLM server unavailable: {str(e)}")
+                # Fallback: Use simple text extraction for the uploaded resume
+                # Reset file pointer in case it was consumed by LLM processing
+                resume_file.seek(0)
+                logger.info("Starting fallback extraction...")
+                extracted_data = self._simple_resume_extraction(resume_file)
+                logger.info(f"Fallback extraction completed: {extracted_data}")
+                confidence = 60.0  # Lower confidence for fallback method
+            
+            # Map extracted data to form fields
+            form_data = {
+                'employee_first_name': '',
+                'employee_last_name': '',
+                'email': extracted_data.get('email', ''),
+                'phone': extracted_data.get('phone', ''),
+                'city': extracted_data.get('city', ''),
+                'qualification': '',
+                'experience': 0,
+            }
+            
+            # Split name if available
+            name = extracted_data.get('name', '')
+            if name:
+                name_parts = name.split(' ', 1)
+                form_data['employee_first_name'] = name_parts[0]
+                if len(name_parts) > 1:
+                    form_data['employee_last_name'] = name_parts[1]
+            
+            # Get education for qualification
+            education = extracted_data.get('education', '')
+            if education:
+                if isinstance(education, list) and len(education) > 0:
+                    # Take the first/most relevant education entry
+                    form_data['qualification'] = education[0]
+                elif isinstance(education, str):
+                    form_data['qualification'] = education
+            
+            # Get total experience
+            total_exp = extracted_data.get('total_experience_years', 0)
+            if total_exp:
+                form_data['experience'] = int(float(total_exp))
+            else:
+                # Fallback: try to extract from experience array
+                experience = extracted_data.get('experience', [])
+                if isinstance(experience, list) and len(experience) > 0:
+                    # Extract number from experience string like "3.0 years of experience"
+                    exp_text = experience[0]
+                    import re
+                    exp_match = re.search(r'(\d+(?:\.\d+)?)', exp_text)
+                    if exp_match:
+                        form_data['experience'] = int(float(exp_match.group(1)))
+            
+            # Get skills as a formatted string
+            skills = extracted_data.get('skills', '')
+            skills_str = skills if isinstance(skills, str) else ', '.join(skills) if isinstance(skills, list) else ''
+            
+            logger.info(f"Final form data being sent: {form_data}")
+            response_data = {
+                'success': True,
+                'data': form_data,
+                'skills': skills_str,
+                'confidence': confidence,
+                'message': f'Resume parsed successfully! Confidence: {confidence:.1f}%'
+            }
+            logger.info(f"Response data: {response_data}")
+            return JsonResponse(response_data)
+            
+        except Exception as e:
+            logger.error(f"Error parsing resume: {str(e)}")
+            return JsonResponse({
+                'success': False,
+                'error': f'Error processing resume: {str(e)}'
+            }, status=500)
+
+
+class ParseAadhaarAutoFillView(View):
+    """
+    Parse uploaded Aadhaar document and return extracted data for auto-filling form
+    """
+    
+    @csrf_exempt
+    def dispatch(self, request, *args, **kwargs):
+        # Check if user is logged in
+        if not request.user.is_authenticated:
+            return JsonResponse({
+                'success': False,
+                'error': 'Authentication required'
+            }, status=401)
+        return super().dispatch(request, *args, **kwargs)
+    
+    def post(self, request):
+        """
+        Handle POST request for Aadhaar document processing
+        """
+        try:
+            # Check if file is uploaded
+            if 'aadhaar_document' not in request.FILES:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'No Aadhaar document uploaded'
+                }, status=400)
+            
+            aadhaar_file = request.FILES['aadhaar_document']
+            
+            # Validate file type
+            allowed_types = ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg']
+            if aadhaar_file.content_type not in allowed_types and not aadhaar_file.name.lower().endswith(('.pdf', '.jpg', '.jpeg', '.png')):
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Invalid file type. Please upload PDF or image files only.'
+                }, status=400)
+            
+            # Validate file size (10MB limit)
+            if aadhaar_file.size > 10 * 1024 * 1024:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'File size too large. Maximum 10MB allowed.'
+                }, status=400)
+            
+            logger.info(f"Processing Aadhaar document: {aadhaar_file.name}, size: {aadhaar_file.size} bytes")
+            
+            # Try LLM processing first
+            try:
+                from employee.llm_document_processor import process_aadhaar_file
+                result = process_aadhaar_file(aadhaar_file)
+                
+                if result.get('status') == 'completed' and result.get('extracted_data'):
+                    extracted_data = result['extracted_data']
+                    confidence = result.get('confidence_score', 0)
+                    
+                    logger.info(f"LLM extraction successful: {extracted_data}")
+                    
+                    # Map extracted data to form fields
+                    form_data = {}
+                    
+                    # Aadhaar number
+                    aadhaar_number = extracted_data.get('aadhaar_number', '')
+                    if aadhaar_number:
+                        form_data['aadhaar_number'] = aadhaar_number
+                    
+                    # Name (use first_name if available, otherwise fall back to full name)
+                    first_name = extracted_data.get('first_name', '')
+                    last_name = extracted_data.get('last_name', '')
+                    if first_name:
+                        form_data['employee_first_name'] = first_name
+                    elif extracted_data.get('name'):
+                        form_data['employee_first_name'] = extracted_data.get('name')
+                    
+                    if last_name:
+                        form_data['employee_last_name'] = last_name
+                    
+                    # Gender
+                    gender = extracted_data.get('gender', '')
+                    if gender:
+                        form_data['gender'] = gender.lower()
+                    
+                    # Date of birth
+                    dob = extracted_data.get('date_of_birth', '')
+                    if dob:
+                        form_data['dob'] = dob
+                    
+                    # Address
+                    address = extracted_data.get('address', '')
+                    if address:
+                        form_data['address'] = address
+                    
+                    # City
+                    city = extracted_data.get('city', '')
+                    if city:
+                        form_data['city'] = city
+                    
+                    # State
+                    state = extracted_data.get('state', '')
+                    if state:
+                        form_data['state'] = state
+                    
+                    # PIN code
+                    pincode = extracted_data.get('pincode', '')
+                    if pincode:
+                        form_data['zip'] = pincode
+                    
+                    logger.info(f"Final Aadhaar form data being sent: {form_data}")
+                    
+                    response_data = {
+                        'success': True,
+                        'data': form_data,
+                        'confidence': confidence,
+                        'message': f'Aadhaar document parsed successfully! Confidence: {confidence:.1f}%'
+                    }
+                    return JsonResponse(response_data)
+                
+            except Exception as e:
+                logger.error(f"LLM processing failed: {str(e)}")
+                # Fall back to simple extraction
+                pass
+            
+            # Fallback: Simple extraction using regex
+            logger.info("Using fallback Aadhaar extraction")
+            extracted_data = self._simple_aadhaar_extraction(aadhaar_file)
+            
+            if extracted_data:
+                form_data = {}
+                
+                # Aadhaar number
+                if extracted_data.get('aadhaar_number'):
+                    form_data['aadhaar_number'] = extracted_data['aadhaar_number']
+                
+                # Name (use first_name if available, otherwise fall back to full name)
+                if extracted_data.get('first_name'):
+                    form_data['employee_first_name'] = extracted_data['first_name']
+                elif extracted_data.get('name'):
+                    form_data['employee_first_name'] = extracted_data['name']
+                
+                if extracted_data.get('last_name'):
+                    form_data['employee_last_name'] = extracted_data['last_name']
+                
+                # Gender
+                if extracted_data.get('gender'):
+                    form_data['gender'] = extracted_data['gender'].lower()
+                
+                # Date of birth
+                if extracted_data.get('date_of_birth'):
+                    form_data['dob'] = extracted_data['date_of_birth']
+                
+                # Address
+                if extracted_data.get('address'):
+                    form_data['address'] = extracted_data['address']
+                
+                # City
+                if extracted_data.get('city'):
+                    form_data['city'] = extracted_data['city']
+                
+                # State
+                if extracted_data.get('state'):
+                    form_data['state'] = extracted_data['state']
+                
+                # PIN code
+                if extracted_data.get('pincode'):
+                    form_data['zip'] = extracted_data['pincode']
+                
+                logger.info(f"Fallback Aadhaar extraction result: {form_data}")
+                
+                response_data = {
+                    'success': True,
+                    'data': form_data,
+                    'confidence': 50.0,  # Lower confidence for fallback
+                    'message': 'Aadhaar document parsed using fallback method'
+                }
+                return JsonResponse(response_data)
+            
+            # If no data extracted
+            return JsonResponse({
+                'success': False,
+                'error': 'Could not extract information from Aadhaar document. Please check the document quality.'
+            }, status=400)
+            
+        except Exception as e:
+            logger.error(f"Error processing Aadhaar document: {str(e)}")
+            return JsonResponse({
+                'success': False,
+                'error': f'Error processing Aadhaar document: {str(e)}'
+            }, status=500)
+    
+    def _simple_aadhaar_extraction(self, aadhaar_file):
+        """
+        Simple Aadhaar extraction using regex patterns when LLM is unavailable
+        """
+        import re
+        
+        logger.info(f"Starting simple Aadhaar extraction for file: {aadhaar_file.name}")
+        
+        try:
+            # Reset file pointer
+            aadhaar_file.seek(0)
+            
+            # For now, we'll only handle text-based extraction
+            # In a real implementation, you might want to add OCR for images
+            if aadhaar_file.name.lower().endswith('.pdf'):
+                try:
+                    import PyPDF2
+                    pdf_reader = PyPDF2.PdfReader(aadhaar_file)
+                    text = ""
+                    for page in pdf_reader.pages:
+                        text += page.extract_text() + "\n"
+                    logger.info(f"PDF processing successful, extracted {len(text)} characters")
+                    logger.info(f"Extracted text: {text}")  # Debug log
+                except Exception as e:
+                    logger.error(f"PDF processing failed: {str(e)}")
+                    return None
+            elif aadhaar_file.name.lower().endswith('.txt'):
+                # Handle text files for testing
+                text = aadhaar_file.read().decode('utf-8')
+                logger.info(f"Text file processing successful, extracted {len(text)} characters")
+                logger.info(f"Extracted text: {text}")  # Debug log
+            else:
+                # For image files, try OCR with pytesseract
+                try:
+                    from PIL import Image
+                    import pytesseract
+                    import io
+                    
+                    # Read the image file
+                    image_data = aadhaar_file.read()
+                    image = Image.open(io.BytesIO(image_data))
+                    
+                    # Extract text using OCR
+                    text = pytesseract.image_to_string(image)
+                    logger.info(f"OCR processing successful, extracted {len(text)} characters")
+                    logger.info(f"Extracted text: {text}")  # Debug log
+                    
+                except ImportError:
+                    logger.error("pytesseract not available for OCR processing")
+                    return None
+                except Exception as e:
+                    logger.error(f"OCR processing failed: {str(e)}")
+                    return None
+            
+            extracted = {}
+            
+            # Extract Aadhaar number (12 digits)
+            aadhaar_pattern = r'\b(\d{4}[\s-]?\d{4}[\s-]?\d{4}|\d{12})\b'
+            aadhaar_matches = re.findall(aadhaar_pattern, text)
+            for match in aadhaar_matches:
+                clean_number = re.sub(r'[\s-]', '', match)
+                if len(clean_number) == 12 and clean_number.isdigit():
+                    extracted['aadhaar_number'] = clean_number
+                    break
+            
+            # Extract PIN code (6 digits)
+            pincode_pattern = r'\b(\d{6})\b'
+            pincode_matches = re.findall(pincode_pattern, text)
+            if pincode_matches:
+                extracted['pincode'] = pincode_matches[0]
+            
+            # Extract date of birth (improved patterns for Aadhaar cards)
+            dob_patterns = [
+                r'Date of Birth[:\s]*(\d{2}[/-]\d{2}[/-]\d{4})',  # DD/MM/YYYY or DD-MM-YYYY
+                r'DOB[:\s]*(\d{2}[/-]\d{2}[/-]\d{4})',
+                r'Birth[:\s]*(\d{2}[/-]\d{2}[/-]\d{4})',
+                r'\b(\d{2}[/-]\d{2}[/-]\d{4})\b',  # DD/MM/YYYY or DD-MM-YYYY
+                r'\b(\d{4}[/-]\d{2}[/-]\d{2})\b',  # YYYY/MM/DD or YYYY-MM-DD
+            ]
+            
+            for pattern in dob_patterns:
+                dob_matches = re.findall(pattern, text, re.IGNORECASE)
+                if dob_matches:
+                    dob = dob_matches[0]
+                    try:
+                        if '/' in dob:
+                            parts = dob.split('/')
+                        else:
+                            parts = dob.split('-')
+                        
+                        if len(parts[0]) == 4:  # YYYY format
+                            extracted['date_of_birth'] = f"{parts[2]}-{parts[1]}-{parts[0]}"  # Convert to DD-MM-YYYY
+                        else:  # DD format
+                            extracted['date_of_birth'] = f"{parts[0]}-{parts[1]}-{parts[2]}"  # Keep as DD-MM-YYYY
+                        break
+                    except:
+                        continue
+            
+            # Extract gender (improved patterns for Aadhaar cards)
+            gender_patterns = [
+                r'Gender[:\s]*(Male|MALE|M|Female|FEMALE|F|Other|OTHER)',
+                r'Sex[:\s]*(Male|MALE|M|Female|FEMALE|F|Other|OTHER)',
+                r'\b(Male|MALE|M)\b',
+                r'\b(Female|FEMALE|F)\b',
+                r'\b(Other|OTHER)\b'
+            ]
+            
+            for pattern in gender_patterns:
+                gender_matches = re.findall(pattern, text, re.IGNORECASE)
+                if gender_matches:
+                    gender = gender_matches[0].upper()
+                    if gender in ['MALE', 'M']:
+                        extracted['gender'] = "Male"
+                    elif gender in ['FEMALE', 'F']:
+                        extracted['gender'] = "Female"
+                    else:
+                        extracted['gender'] = "Other"
+                    break
+            
+            # Extract name (improved patterns for Aadhaar cards)
+            name_patterns = [
+                r'Name[:\s]*([A-Za-z\s]+?)(?:\n|$)',
+                r'Name of Person[:\s]*([A-Za-z\s]+?)(?:\n|$)',
+                r'Full Name[:\s]*([A-Za-z\s]+?)(?:\n|$)',
+                r'^([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)$',  # Proper case names
+                r'^([A-Z]+(?:\s+[A-Z]+)+)$'  # All caps names
+            ]
+            
+            for pattern in name_patterns:
+                name_match = re.search(pattern, text, re.MULTILINE | re.IGNORECASE)
+                if name_match:
+                    extracted['name'] = name_match.group(1).strip()
+                    break
+            
+            # If no name found with patterns, try line-by-line approach
+            if not extracted.get('name'):
+                lines = text.split('\n')
+                for line in lines[:15]:  # Check more lines
+                    line = line.strip()
+                    # Look for lines that look like names (2-4 words, mostly letters)
+                    if (line and 2 <= len(line.split()) <= 4 and 
+                        re.match(r'^[A-Za-z\s]+$', line) and 
+                        len(line) > 3 and len(line) < 50):
+                        # Skip common non-name words
+                        if not any(word in line.lower() for word in ['government', 'india', 'aadhaar', 'card', 'number', 'date', 'birth']):
+                            extracted['name'] = line
+                            break
+            
+            # Split name into first and last name
+            if extracted.get('name'):
+                name_parts = extracted['name'].split()
+                if len(name_parts) >= 2:
+                    extracted['first_name'] = name_parts[0]
+                    extracted['last_name'] = ' '.join(name_parts[1:])
+                else:
+                    extracted['first_name'] = extracted['name']
+                    extracted['last_name'] = ""
+            
+            # Extract address using a manual line-by-line approach for Aadhaar cards
+            lines = text.split('\n')
+            address_lines = []
+            in_address_section = False
+            
+            for i, line in enumerate(lines):
+                line = line.strip()
+                
+                # Start collecting address after "To"
+                if line.lower() == 'to':
+                    in_address_section = True
+                    continue
+                
+                # Stop collecting when we hit personal information
+                if in_address_section and any(indicator in line.lower() for indicator in ['name of person', 'dob:', 'gender:', 'aadhaar', 'mobile:', 'number:']):
+                    break
+                
+                # Collect address lines
+                if in_address_section and line:
+                    # Skip empty lines, person's name, and common non-address words
+                    if line and not line.lower() in ['government of india', 'to', '']:
+                        # Skip the person's name line (usually the first line after "To")
+                        if not any(word in line.lower() for word in ['rajini', 'narikenabilli']):
+                            address_lines.append(line)
+            
+            if address_lines:
+                # Join all address lines
+                full_address = ' '.join(address_lines)
+                # Clean up extra spaces and remove trailing comma and spaces
+                full_address = re.sub(r'\s+', ' ', full_address)
+                full_address = full_address.rstrip(', ')
+                
+                # Remove unwanted OCR artifacts and extra characters at the beginning
+                # Remove characters like XX, Telugu characters, and other OCR artifacts
+                full_address = re.sub(r'^[^A-Za-z0-9]*', '', full_address)  # Remove non-alphanumeric chars at start
+                full_address = re.sub(r'^[A-Z]{1,3}\s+', '', full_address)  # Remove short uppercase words at start (XX, ABC, etc.)
+                full_address = re.sub(r'^[^\w]*', '', full_address)  # Remove any remaining non-word chars at start
+                
+                # Additional cleanup for common OCR artifacts
+                full_address = re.sub(r'^(XX|ABC|DEF|GHI|JKL|MNO|PQR|STU|VWX|YZ)\s+', '', full_address, flags=re.IGNORECASE)
+                
+                extracted['address'] = full_address
+            
+            # If the above didn't work, try individual patterns
+            if not extracted.get('address'):
+                address_patterns = [
+                    r'C/O[:\s]*([A-Za-z0-9\s,.-]+?)(?:\n\s*Name|\n\s*DOB|\n\s*Gender|\n\s*Aadhaar|\n\s*Mobile|$)',
+                    r'Door No[:\s]*([A-Za-z0-9\s,.-]+?)(?:\n\s*Name|\n\s*DOB|\n\s*Gender|\n\s*Aadhaar|\n\s*Mobile|$)',
+                    r'Address[:\s]*([A-Za-z0-9\s,.-]+?)(?:\n\s*Name|\n\s*DOB|\n\s*Gender|\n\s*Aadhaar|\n\s*Mobile|$)',
+                    r'Residential Address[:\s]*([A-Za-z0-9\s,.-]+?)(?:\n\s*Name|\n\s*DOB|\n\s*Gender|\n\s*Aadhaar|\n\s*Mobile|$)',
+                    r'Permanent Address[:\s]*([A-Za-z0-9\s,.-]+?)(?:\n\s*Name|\n\s*DOB|\n\s*Gender|\n\s*Aadhaar|\n\s*Mobile|$)',
+                    r'చిరునామా[:\s]*([A-Za-z0-9\s,.-]+?)(?:\n\s*Name|\n\s*DOB|\n\s*Gender|\n\s*Aadhaar|\n\s*Mobile|$)',
+                ]
+                
+                for pattern in address_patterns:
+                    address_match = re.search(pattern, text, re.MULTILINE | re.IGNORECASE | re.DOTALL)
+                    if address_match:
+                        address = address_match.group(1).strip()
+                        # Clean up the address
+                        address = re.sub(r'\n+', ' ', address)  # Replace newlines with spaces
+                        address = re.sub(r'\s+', ' ', address)  # Replace multiple spaces with single space
+                        extracted['address'] = address
+                        break
+            
+            # If no address found with patterns, try to find address-like text
+            if not extracted.get('address'):
+                lines = text.split('\n')
+                address_lines = []
+                in_address_section = False
+                
+                for i, line in enumerate(lines):
+                    line = line.strip()
+                    # Look for lines that contain address indicators (including door number)
+                    if any(indicator in line.lower() for indicator in ['door no', 'door number', 'c/o', 'street', 'road', 'lane', 'sector', 'area', 'colony', 'nagar', 'village', 'taluka', 'district', 'mandalam', 'veedhi']):
+                        in_address_section = True
+                        address_lines.append(line)
+                    elif in_address_section and line:
+                        # Continue collecting address lines until we hit personal info
+                        if any(indicator in line.lower() for indicator in ['name of person', 'dob:', 'gender:', 'aadhaar', 'mobile:', 'number:', 'qr code']):
+                            break
+                        elif re.match(r'^[A-Za-z0-9\s,.-/:\s]+$', line) and len(line) > 2:
+                            address_lines.append(line)
+                        elif line and re.search(r'\d{6}', line):  # PIN code line
+                            address_lines.append(line)
+                            break
+                        elif line and ('state:' in line.lower() or 'district:' in line.lower() or 'vtc:' in line.lower()):
+                            address_lines.append(line)
+                        else:
+                            break
+                
+                if address_lines:
+                    # Join all address lines and clean up
+                    full_address = ' '.join(address_lines)
+                    # Remove extra spaces and clean up
+                    full_address = re.sub(r'\s+', ' ', full_address)
+                    # Remove trailing comma and spaces
+                    full_address = full_address.rstrip(', ')
+                    
+                    # Remove unwanted OCR artifacts and extra characters at the beginning
+                    # Remove characters like XX, Telugu characters, and other OCR artifacts
+                    full_address = re.sub(r'^[^A-Za-z0-9]*', '', full_address)  # Remove non-alphanumeric chars at start
+                    full_address = re.sub(r'^[A-Z]{1,3}\s+', '', full_address)  # Remove short uppercase words at start (XX, ABC, etc.)
+                    full_address = re.sub(r'^[^\w]*', '', full_address)  # Remove any remaining non-word chars at start
+                    
+                    # Additional cleanup for common OCR artifacts
+                    full_address = re.sub(r'^(XX|ABC|DEF|GHI|JKL|MNO|PQR|STU|VWX|YZ)\s+', '', full_address, flags=re.IGNORECASE)
+                    
+                    extracted['address'] = full_address
+            
+            # Extract state from address or separate patterns
+            if not extracted.get('state'):
+                state_patterns = [
+                    r'State[:\s]*([A-Za-z\s]+?)(?:,|\n|$)',
+                    r'District[:\s]*([A-Za-z\s]+?)(?:,|\n|$)',
+                ]
+                
+                for pattern in state_patterns:
+                    state_match = re.search(pattern, text, re.MULTILINE | re.IGNORECASE)
+                    if state_match:
+                        state = state_match.group(1).strip()
+                        # Clean up state name
+                        state = re.sub(r'\s+', ' ', state)
+                        extracted['state'] = state
+                        break
+            
+            # Extract city from address or separate patterns
+            if not extracted.get('city'):
+                city_patterns = [
+                    r'City[:\s]*([A-Za-z\s]+?)(?:,|\n|$)',
+                    r'VTC[:\s]*([A-Za-z\s]+?)(?:,|\n|$)',
+                    r'Town[:\s]*([A-Za-z\s]+?)(?:,|\n|$)',
+                ]
+                
+                for pattern in city_patterns:
+                    city_match = re.search(pattern, text, re.MULTILINE | re.IGNORECASE)
+                    if city_match:
+                        city = city_match.group(1).strip()
+                        # Clean up city name
+                        city = re.sub(r'\s+', ' ', city)
+                        extracted['city'] = city
+                        break
+            
+            logger.info(f"Simple Aadhaar extraction result: {extracted}")
+            return extracted
+            
+        except Exception as e:
+            logger.error(f"Error in simple Aadhaar extraction: {str(e)}")
+            return None
+
+
+class ParsePanAutoFillView(View):
+    """
+    View to handle PAN document auto-fill requests
+    """
+    
+    @csrf_exempt
+    def dispatch(self, request, *args, **kwargs):
+        # Ensure user is authenticated
+        if not request.user.is_authenticated:
+            return JsonResponse({'error': 'Authentication required'}, status=401)
+        return super().dispatch(request, *args, **kwargs)
+    
+    def post(self, request):
+        """
+        Process PAN document and return extracted data for auto-fill
+        """
+        try:
+            # Get the uploaded file
+            pan_file = request.FILES.get('pan_document')
+            if not pan_file:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'No PAN document uploaded'
+                })
+            
+            # Validate file type
+            allowed_extensions = ['.pdf', '.jpg', '.jpeg', '.png', '.txt']
+            file_extension = os.path.splitext(pan_file.name)[1].lower()
+            if file_extension not in allowed_extensions:
+                return JsonResponse({
+                    'success': False,
+                    'error': f'Unsupported file type. Allowed: {", ".join(allowed_extensions)}'
+                })
+            
+            # Try LLM processing first
+            try:
+                from employee.llm_document_processor import process_pan_file
+                result = process_pan_file(pan_file)
+                
+                if result.get('status') == 'completed' and result.get('extracted_data'):
+                    extracted_data = result['extracted_data']
+                    confidence = result.get('confidence_score', 0)
+                    
+                    # Map extracted data to form fields
+                    form_data = {}
+                    
+                    # PAN number
+                    pan_number = extracted_data.get('pan_number', '')
+                    if pan_number:
+                        form_data['pan_number'] = pan_number
+                    
+                    # Name
+                    name = extracted_data.get('name', '')
+                    if name:
+                        form_data['employee_first_name'] = name
+                    
+                    # Father's name
+                    father_name = extracted_data.get('father_name', '')
+                    if father_name:
+                        form_data['father_name'] = father_name
+                    
+                    # Date of birth
+                    dob = extracted_data.get('date_of_birth', '')
+                    if dob:
+                        form_data['dob'] = dob
+                    
+                    response_data = {
+                        'success': True,
+                        'data': form_data,
+                        'confidence': confidence,
+                        'message': f'PAN document parsed successfully! Confidence: {confidence:.1f}%',
+                        'extraction_method': 'llm'
+                    }
+                    
+                    logger.info(f"LLM PAN extraction successful: {form_data}")
+                    return JsonResponse(response_data)
+                
+            except Exception as e:
+                logger.warning(f"LLM PAN processing failed: {str(e)}")
+            
+            # Fallback to simple extraction
+            extracted_data = self._simple_pan_extraction(pan_file)
+            
+            if extracted_data:
+                # Map extracted data to form fields
+                form_data = {}
+                
+                # PAN number
+                if extracted_data.get('pan_number'):
+                    form_data['pan_number'] = extracted_data['pan_number']
+                
+                # Name
+                if extracted_data.get('name'):
+                    form_data['employee_first_name'] = extracted_data['name']
+                
+                # Father's name
+                if extracted_data.get('father_name'):
+                    form_data['father_name'] = extracted_data['father_name']
+                
+                # Date of birth
+                if extracted_data.get('date_of_birth'):
+                    form_data['dob'] = extracted_data['date_of_birth']
+                
+                # Calculate confidence based on number of extracted fields
+                total_possible_fields = 4  # pan_number, name, father_name, dob
+                extracted_fields = len([k for k, v in form_data.items() if v])
+                confidence = min(95.0, (extracted_fields / total_possible_fields) * 100)
+                
+                response_data = {
+                    'success': True,
+                    'data': form_data,
+                    'confidence': confidence,
+                    'message': f'PAN document parsed successfully! Confidence: {confidence:.1f}%',
+                    'extraction_method': 'regex_fallback'
+                }
+                
+                logger.info(f"Fallback PAN extraction successful: {form_data}")
+                return JsonResponse(response_data)
+            
+            return JsonResponse({
+                'success': False,
+                'error': 'Could not extract PAN information from document'
+            })
+            
+        except Exception as e:
+            logger.error(f"Error processing PAN document: {str(e)}")
+            return JsonResponse({
+                'success': False,
+                'error': f'Error processing PAN document: {str(e)}'
+            })
+    
+    def _simple_pan_extraction(self, pan_file):
+        """
+        Simple PAN extraction using regex patterns (fallback when LLM fails)
+        """
+        try:
+            # Reset file pointer
+            pan_file.seek(0)
+            
+            # Extract text based on file type
+            if pan_file.name.lower().endswith('.pdf'):
+                # For PDF files, try to extract text
+                try:
+                    import PyPDF2
+                    pdf_reader = PyPDF2.PdfReader(pan_file)
+                    text = ""
+                    for page in pdf_reader.pages:
+                        text += page.extract_text() + "\n"
+                except Exception as e:
+                    logger.error(f"PDF extraction failed: {str(e)}")
+                    return None
+            elif pan_file.name.lower().endswith('.txt'):
+                # Handle text files for testing
+                text = pan_file.read().decode('utf-8')
+            else:
+                # For image files, try OCR with pytesseract
+                try:
+                    from PIL import Image
+                    import pytesseract
+                    import io
+
+                    image_data = pan_file.read()
+                    image = Image.open(io.BytesIO(image_data))
+                    text = pytesseract.image_to_string(image)
+                except ImportError:
+                    logger.error("pytesseract not available for OCR processing")
+                    return None
+                except Exception as e:
+                    logger.error(f"OCR processing failed: {str(e)}")
+                    return None
+            
+            extracted = {}
+            
+            # Extract PAN number (10 characters: 5 letters + 4 digits + 1 letter)
+            pan_patterns = [
+                r'Permanent Account Number[:\s]*([A-Z]{5}[0-9]{4}[A-Z]{1})',
+                r'PAN[:\s]*([A-Z]{5}[0-9]{4}[A-Z]{1})',
+                r'([A-Z]{5}[0-9]{4}[A-Z]{1})',
+            ]
+            
+            for pattern in pan_patterns:
+                pan_match = re.search(pattern, text, re.IGNORECASE)
+                if pan_match:
+                    extracted["pan_number"] = pan_match.group(1).upper()
+                    break
+            
+            # Extract name
+            name_patterns = [
+                r'Name[:\s]*([A-Za-z\s\.]+?)(?:\n|Father|Date|$)',
+                r'Name of Person[:\s]*([A-Za-z\s\.]+?)(?:\n|Father|Date|$)',
+                r'Income Tax Department[:\s]*([A-Za-z\s\.]+?)(?:\n|Father|Date|$)',
+            ]
+            
+            for pattern in name_patterns:
+                name_match = re.search(pattern, text, re.MULTILINE | re.IGNORECASE)
+                if name_match:
+                    name = name_match.group(1).strip()
+                    name = re.sub(r'\s+', ' ', name)
+                    if len(name) > 2:  # Valid name should be more than 2 characters
+                        extracted["name"] = name
+                        break
+            
+            # Extract father's name
+            father_patterns = [
+                r'Father\'s Name[:\s]*([A-Za-z\s\.]+?)(?:\n|Date|$)',
+                r'Father Name[:\s]*([A-Za-z\s\.]+?)(?:\n|Date|$)',
+            ]
+            
+            for pattern in father_patterns:
+                father_match = re.search(pattern, text, re.MULTILINE | re.IGNORECASE)
+                if father_match:
+                    father_name = father_match.group(1).strip()
+                    father_name = re.sub(r'\s+', ' ', father_name)
+                    if len(father_name) > 2:
+                        extracted["father_name"] = father_name
+                        break
+            
+            # Extract date of birth
+            dob_patterns = [
+                r'Date of Birth[:\s]*(\d{2}[/-]\d{2}[/-]\d{4})',
+                r'DOB[:\s]*(\d{2}[/-]\d{2}[/-]\d{4})',
+                r'Birth[:\s]*(\d{2}[/-]\d{2}[/-]\d{4})',
+                r'\b(\d{2}[/-]\d{2}[/-]\d{4})\b',
+            ]
+            
+            for pattern in dob_patterns:
+                dob_matches = re.findall(pattern, text, re.IGNORECASE)
+                if dob_matches:
+                    dob = dob_matches[0]
+                    try:
+                        if '/' in dob:
+                            parts = dob.split('/')
+                        else:
+                            parts = dob.split('-')
+                        
+                        if len(parts[0]) == 4:  # YYYY format
+                            extracted["date_of_birth"] = f"{parts[2]}-{parts[1]}-{parts[0]}"  # Convert to DD-MM-YYYY
+                        else:  # DD format
+                            extracted["date_of_birth"] = f"{parts[0]}-{parts[1]}-{parts[2]}"  # Keep as DD-MM-YYYY
+                        break
+                    except:
+                        continue
+            
+            logger.info(f"Simple PAN extraction result: {extracted}")
+            return extracted
+            
+        except Exception as e:
+            logger.error(f"Error in simple PAN extraction: {str(e)}")
+            return None

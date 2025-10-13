@@ -4,7 +4,7 @@ urls.py
 This module is used to map url path with view methods.
 """
 
-from django.urls import path
+from django.urls import path, include
 
 from base.views import object_delete, object_duplicate
 from employee import not_in_out_dashboard, policies, views
@@ -425,4 +425,28 @@ urlpatterns = [
         name="employee-tag-delete",
         kwargs={"model": EmployeeTag, "HttpResponse": True},
     ),
+    
+    # Resume parsing auto-fill endpoint
+    path(
+        "parse-resume-auto-fill/",
+        views.ParseResumeAutoFillView.as_view(),
+        name="parse-resume-auto-fill",
+    ),
+    
+    # Aadhaar document auto-fill endpoint
+    path(
+        "parse-aadhaar-auto-fill/",
+        views.ParseAadhaarAutoFillView.as_view(),
+        name="parse-aadhaar-auto-fill",
+    ),
+    
+    # PAN document auto-fill endpoint
+    path(
+        "parse-pan-auto-fill/",
+        views.ParsePanAutoFillView.as_view(),
+        name="parse-pan-auto-fill",
+    ),
+    
+    # Legacy compatibility include for AI namespace used in templates
+    path("ai/", include("employee.ai_urls")),
 ]

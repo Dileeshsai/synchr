@@ -82,8 +82,8 @@ def late_come(attendance, start_time, end_time, shift):
     if shift and shift.grace_time_id:
         # checking grace time in shift, it has the higher priority
         if (
-            shift.grace_time_id.is_active == True
-            and shift.grace_time_id.allowed_clock_in == True
+            shift.grace_time_id.is_active
+            and shift.grace_time_id.allowed_clock_in
         ):
             # Setting allowance for the check in time
             now_sec -= shift.grace_time_id.allowed_time_in_secs
@@ -378,6 +378,9 @@ def clock_out_attendance_and_activity(employee, date_today, now, out_datetime=No
         duration = 0
         for activity in attendance_activities:
             in_datetime, out_datetime = activity_datetime(activity)
+            # Skip if clock_out is missing
+            if in_datetime is None or out_datetime is None:
+                continue
             difference = out_datetime - in_datetime
             days_second = difference.days * 24 * 3600
             seconds = difference.seconds
@@ -445,8 +448,8 @@ def early_out(attendance, start_time, end_time, shift):
     # Checking gracetime allowance before creating early out
     if shift and shift.grace_time_id:
         if (
-            shift.grace_time_id.is_active == True
-            and shift.grace_time_id.allowed_clock_out == True
+            shift.grace_time_id.is_active
+            and shift.grace_time_id.allowed_clock_out
         ):
             now_sec += shift.grace_time_id.allowed_time_in_secs
     elif GraceTime.objects.filter(is_default=True, is_active=True).exists():

@@ -1658,7 +1658,17 @@ def feedback_list_search(request):
     feedback = request.GET.get("search")  # if the search is none the filter will works
     if feedback is None:
         feedback = ""
-    employee_id = Employee.objects.get(employee_user_id=request.user)
+    try:
+        employee_id = Employee.objects.get(employee_user_id=request.user)
+    except Employee.DoesNotExist:
+        # Return empty feedback list if user doesn't have an Employee record
+        context = {
+            "self_feedback": Feedback.objects.none(),
+            "requested_feedback": Feedback.objects.none(),
+            "all_feedback": Feedback.objects.none(),
+            "anonymous_feedback": AnonymousFeedback.objects.none(),
+        }
+        return render(request, "feedback/feedback_list.html", context)
     self_feedback = Feedback.objects.filter(employee_id=employee_id).filter(
         review_cycle__icontains=feedback
     )

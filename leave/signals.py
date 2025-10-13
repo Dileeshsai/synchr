@@ -45,28 +45,25 @@ if apps.is_installed("attendance"):
                     work_entry.employee_id = instance.employee_id
                     work_entry.is_leave_record = True
                     work_entry.leave_request_id = instance
-                    work_entry.day_percentage = (
-                        0.50
-                        if instance.start_date == date
-                        and instance.start_date_breakdown == "first_half"
-                        or instance.end_date == date
-                        and instance.end_date_breakdown == "second_half"
-                        else 0.00
+                    
+                    # Check if it's a half-day leave
+                    is_half_day_leave = (
+                        (instance.start_date == date and instance.start_date_breakdown in ["first_half", "second_half"]) or
+                        (instance.end_date == date and instance.end_date_breakdown in ["first_half", "second_half"])
                     )
-                    status = (
-                        "CONF"
-                        if instance.start_date == date
-                        and instance.start_date_breakdown == "first_half"
-                        or instance.end_date == date
-                        and instance.end_date_breakdown == "second_half"
-                        else "ABS"
-                    )
+                    
+                    work_entry.day_percentage = 0.50 if is_half_day_leave else 0.00
+                    
+                    # For half-day leaves, mark as HDP (Half Day Present expected)
+                    # For full-day leaves, mark as ABS (Absent - on leave)
+                    status = "HDP" if is_half_day_leave else "ABS"
+                    
                     work_entry.work_record_type = status
                     work_entry.date = date
                     work_entry.message = (
-                        "Leave"
-                        if status == "ABS"
-                        else _("Half day Attendance need to validate")
+                        _("Half day leave - attendance needed")
+                        if is_half_day_leave
+                        else _("Leave")
                     )
                     work_entry.save()
 

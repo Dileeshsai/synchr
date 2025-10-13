@@ -165,12 +165,11 @@ class EmployeeForm(ModelForm):
             "is_from_onboarding",
             "is_directly_converted",
             "is_active",
-            "aadhaar_document",
-            "pan_document",
         )
         widgets = {
             "dob": TextInput(attrs={"type": "date", "id": "dob"}),
             "passport_expiry": TextInput(attrs={"type": "date", "id": "passport_expiry"}),
+            "passport_issue_date": TextInput(attrs={"type": "date", "id": "passport_issue_date"}),
         }
 
     def __init__(self, *args, **kwargs):
@@ -188,6 +187,8 @@ class EmployeeForm(ModelForm):
                 initial["dob"] = instance.dob.strftime("%H:%M")
             if instance.passport_expiry is not None:
                 initial["passport_expiry"] = instance.passport_expiry.strftime("%Y-%m-%d")
+            if instance.passport_issue_date is not None:
+                initial["passport_issue_date"] = instance.passport_issue_date.strftime("%Y-%m-%d")
             kwargs["initial"] = initial
         else:
             self.initial = {"badge_id": self.get_next_badge_id()}

@@ -94,10 +94,62 @@ kaleido>=0.2.1
 bokeh>=3.2.0
 altair>=5.0.0
 
-# Chart Bot Dependencies
+
 langchain>=0.0.350
 langgraph>=0.0.20
 openai>=1.0.0
+
+
+# AI Document Processing Dependencies (Python-only, no API keys required)
+pytesseract>=0.3.13
+PyPDF2>=3.0.1
+python-docx>=0.8.11
+# Additional PDF processing libraries for better compatibility
+PyMuPDF>=1.24.5
+pdfplumber>=0.10.0
+# Image processing for better OCR
+opencv-python>=4.8.1.78
+Pillow>=10.0.1
+
+# Enhanced Resume Parsing with pyresparser
+pyresparser>=1.0.6
+spacy>=3.4.0
+nltk>=3.8.0
+
+
+# AI DOCUMENT PROCESSING INSTALLATION INSTRUCTIONS:
+# Uses only Python libraries - no third-party API keys required
+#
+# 1. Install Python dependencies:
+#    pip install pytesseract PyPDF2 python-docx pyresparser spacy nltk
+#
+# 2. Install Tesseract OCR (for better image OCR):
+#
+#    WINDOWS:
+#    - Download from: https://github.com/UB-Mannheim/tesseract/wiki
+#    - Install the executable
+#    - Add Tesseract to your PATH environment variable
+#
+#    LINUX (Ubuntu/Debian):
+#    sudo apt-get update
+#    sudo apt-get install tesseract-ocr
+#
+#    macOS:
+#    brew install tesseract
+#
+# 3. Install spaCy and NLTK models (for pyresparser):
+#    python -m spacy download en_core_web_sm
+#    python -m nltk.downloader words
+#
+# 4. Test installation:
+#    python test_simple_ocr.py
+#
+# 5. Text Extraction Methods (in order of preference):
+#    - pyresparser (for resumes - most accurate)
+#    - Local Tesseract OCR (for images)
+#    - PyPDF2 PDF text extraction (for PDFs)
+#    - python-docx text extraction (for DOCX files)
+#    - Basic text file reading (for TXT files)
 
 
 # FACE RECOGNITION INSTALLATION INSTRUCTIONS:

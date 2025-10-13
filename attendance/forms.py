@@ -1229,7 +1229,7 @@ class BulkAttendanceRequestForm(BaseModelForm):
                     instance.batch_attendance_id = batch
                 instance.save()
             else:
-                logger(form.errors)
+                logger.error(f"Form validation errors: {form.errors}")
         instance = super().save(commit=False)
         if commit:
             instance.save()

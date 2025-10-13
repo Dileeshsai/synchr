@@ -147,15 +147,27 @@
                         <label class="oh-label d-block" for="driving_license">{% trans "Driving License" %}</label>
                         {{form.driving_license}} {{form.driving_license.errors}}
                     </div>
+                </div>
+                <div class="row">
                     <div class="col-12 col-sm-12 col-md-12 col-lg-6">
                         <label class="oh-label d-block" for="passport_number">{% trans "Passport Number" %}</label>
                         {{form.passport_number}} {{form.passport_number.errors}}
                     </div>
-                </div>
-                <div class="row">
                     <div class="col-12 col-sm-12 col-md-12 col-lg-6">
                         <label class="oh-label d-block" for="passport_expiry">{% trans "Passport Expiry" %}</label>
                         {{form.passport_expiry}} {{form.passport_expiry.errors}}
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                        <label class="oh-label d-block" for="passport_issue_date">{% trans "Passport Issue Date" %}</label>
+                        {{form.passport_issue_date}} {{form.passport_issue_date.errors}}
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                        <label class="oh-label d-block" for="nationality">{% trans "Nationality" %}</label>
+                        {{form.nationality}} {{form.nationality.errors}}
                     </div>
                 </div>
                 <hr class="mt-5 mb-3" />

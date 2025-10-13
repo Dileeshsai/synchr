@@ -62,11 +62,19 @@ def attendance_post_save(sender, instance, **kwargs):
             1.00 if at_work_second > min_hour_second / 2 else 0.50
         )
 
-    if work_record.is_leave_record:
-        message = (
-            _("Half day leave") if status == "HDP" else _("An approved leave exists")
-        )
-
+    # Check for "On leave, But attendance exist" scenario - this creates a CONFLICT
+    if work_record.is_leave_record and work_record.leave_request_id:
+        # If there's both leave and attendance for the same date
+        if status == "HDP":
+            # Half day present with half day leave - this is acceptable
+            message = _("Half day leave")
+            status = "HDP"
+        else:
+            # Full day present but leave approved - this is a CONFLICT
+            message = _("On leave, But attendance exist")
+            status = "CONF"
+    
+    # Handle "Currently working" status (clock out not done yet)
     if not instance.attendance_clock_out:
         status, message = "FDP", _("Currently working")
 
