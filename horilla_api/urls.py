@@ -10,5 +10,11 @@ urlpatterns = [
     path("attendance/", include("horilla_api.api_urls.attendance.urls")),
     path("leave/", include("horilla_api.api_urls.leave.urls")),
     path("facedetection/", include("horilla_api.api_urls.facedetection.urls")),
-    
+    path("recruitment/", include("horilla_api.api_urls.recruitment.urls")),
+    path("pms/", include("horilla_api.api_urls.pms.urls")),
+    path("onboarding/", include("horilla_api.api_urls.onboarding.urls")),
+    path("offboarding/", include("horilla_api.api_urls.offboarding.urls")),
+    path("helpdesk/", include("horilla_api.api_urls.helpdesk.urls")),
+    path("project/", include("horilla_api.api_urls.project.urls")),
+    path("geofencing/", include("horilla_api.api_urls.geofencing.urls")),
 ]

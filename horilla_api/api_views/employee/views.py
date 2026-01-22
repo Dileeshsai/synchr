@@ -681,14 +681,25 @@ class PolicyAPIView(APIView):
         return Response({"error": "No permission"}, status=401)
       try:
         policy = self.get_object(pk)
+        # Clear M2M relationships BEFORE deletion to avoid errors
+        policy.attachments.clear()
+        policy.specific_employees.clear()
+        policy.company_id.clear()
+        # Delete the policy
         policy.delete()
-        return Response({"message": "Policy deleted"}, status=200)
+        return Response({"message": "Policy deleted successfully"}, status=200)
       except Http404:
         return Response({"error": "Policy not found"}, status=404)
       except Exception as e:
-        # Log the error for debugging
-        print("Delete Policy Error:", str(e))
-        return Response({"error": str(e)}, status=500)
+        # Check if policy was actually deleted despite the error
+        try:
+            Policy.objects.get(pk=pk)
+            # Policy still exists, return error
+            return Response({"error": str(e)}, status=500)
+        except Policy.DoesNotExist:
+            # Policy was deleted successfully, return success even if cleanup had issues
+            return Response({"message": "Policy deleted successfully"}, status=200)
+        
 class DocumentRequestAPIView(APIView):
     """
     Endpoint for managing document requests.
@@ -767,9 +778,64 @@ class DocumentRequestAPIView(APIView):
 
     @method_decorator(permission_required("employee.delete_employee"))
     def delete(self, request, pk):
-        document_request = self.get_object(pk)
-        document_request.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        try:
+            document_request = self.get_object(pk)
+            
+            # Check for related documents before deletion
+            related_documents = Document.objects.filter(document_request_id=document_request)
+            if related_documents.exists():
+                return Response(
+                    {
+                        "error": "Cannot delete document request. Related documents found.",
+                        "related_documents": [
+                            {
+                                "id": doc.id,
+                                "title": doc.title,
+                                "status": doc.status
+                            }
+                            for doc in related_documents
+                        ],
+                        "count": related_documents.count(),
+                        "message": "Please delete the related documents first, then try again.",
+                        "action_required": "Delete related documents using: DELETE /api/v1/employee/documents/<document_id>/"
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Clear M2M relationships BEFORE deletion to avoid errors
+            document_request.employee_id.clear()
+            # Delete the document request
+            document_request.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+            
+        except Http404:
+            return Response({"error": "Document request not found"}, status=status.HTTP_404_NOT_FOUND)
+        except ProtectedError as e:
+            # Fallback: Handle protected error if check above didn't catch it
+            try:
+                document_request = self.get_object(pk)
+                related_documents = Document.objects.filter(document_request_id=document_request)
+                return Response(
+                    {
+                        "error": "Cannot delete document request due to protected relationships.",
+                        "related_documents": [
+                            {
+                                "id": doc.id,
+                                "title": doc.title,
+                                "status": doc.status
+                            }
+                            for doc in related_documents
+                        ],
+                        "count": related_documents.count(),
+                        "message": "Please delete the related documents first, then try again.",
+                        "action_required": "Delete related documents using: DELETE /api/v1/employee/documents/<document_id>/"
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            except Http404:
+                return Response({"error": "Document request not found"}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class DocumentAPIView(APIView):

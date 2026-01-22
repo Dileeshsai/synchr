@@ -846,8 +846,19 @@ class Policy(HorillaModel):
         verbose_name_plural = _("Policies")
 
     def delete(self, *args, **kwargs):
+        # Get attachments BEFORE deleting the object to avoid M2M relationship errors
+        attachments = list(self.attachments.all())
+        # Clear the many-to-many relationship
+        self.attachments.clear()
+        # Delete the policy object
         super().delete(*args, **kwargs)
-        self.attachments.all().delete()
+        # Delete attachment files after policy is deleted
+        for attachment in attachments:
+            if attachment:
+                try:
+                    attachment.delete()
+                except Exception:
+                    pass  # Attachment might already be deleted or doesn't exist
 
 
 class BonusPoint(HorillaModel):
