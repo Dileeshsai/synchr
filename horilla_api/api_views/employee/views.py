@@ -997,11 +997,11 @@ class EmployeeSelectorView(APIView):
         user = request.user
         employee = user.employee_get
         
-        # Determine user's role using RoleManager
-        user_role = RoleManager.get_user_role(user, employee)
+        # Determine user's role
+        user_role = self.get_user_role(user, employee)
         
         # Get employees based on role
-        employees = RoleManager.get_employees_by_role(user, employee, user_role)
+        employees = self.get_employees_by_role(user, employee, user_role)
         
         # Apply additional filters
         employees = self.apply_filters(request, employees)
@@ -1010,7 +1010,7 @@ class EmployeeSelectorView(APIView):
         response_data = {
             "user_role": user_role,
             "total_employees": employees.count(),
-            "role_description": RoleManager.get_role_description(user_role)
+            "role_description": self.get_role_description(user_role)
         }
         
         paginator = PageNumberPagination()
@@ -1022,6 +1022,87 @@ class EmployeeSelectorView(APIView):
         paginated_response.data.update(response_data)
         
         return paginated_response
+    
+    def get_user_role(self, user, employee):
+        """
+        Determine user's role based on permissions and relationships
+        """
+        if not employee:
+            return "GUEST"
+        
+        # Check if superuser
+        if user.is_superuser:
+            return "SUPERUSER"
+        
+        # Check if user has view all employees permission (CEO/Admin level)
+        if user.has_perm("employee.view_all_employees") or user.has_perm("employee.view_employee"):
+            # Check if has company-level access
+            if hasattr(employee, 'employee_work_info') and employee.employee_work_info:
+                return "CEO"
+            return "ADMIN"
+        
+        # Check if user is a manager (has subordinates)
+        is_manager = EmployeeWorkInformation.objects.filter(
+            reporting_manager_id=employee
+        ).exists()
+        
+        if is_manager:
+            # Check if department manager
+            if hasattr(employee, 'employee_work_info') and employee.employee_work_info:
+                dept = employee.employee_work_info.department_id
+                if dept:
+                    # Check if manages entire department
+                    dept_employees = EmployeeWorkInformation.objects.filter(
+                        department_id=dept
+                    ).exclude(reporting_manager_id=employee)
+                    if not dept_employees.exists():
+                        return "DEPARTMENT_MANAGER"
+            return "TEAM_MANAGER"
+        
+        return "EMPLOYEE"
+    
+    def get_employees_by_role(self, user, employee, role):
+        """
+        Get employees based on user's role
+        """
+        if role == "SUPERUSER" or role == "ADMIN" or role == "CEO":
+            # Superuser/Admin/CEO can see all employees
+            return Employee.objects.filter(is_active=True)
+        elif role == "DEPARTMENT_MANAGER":
+            # Department manager sees employees in their department
+            if hasattr(employee, 'employee_work_info') and employee.employee_work_info:
+                dept = employee.employee_work_info.department_id
+                if dept:
+                    return Employee.objects.filter(
+                        employee_work_info__department_id=dept,
+                        is_active=True
+                    )
+        elif role == "TEAM_MANAGER":
+            # Team manager sees their subordinates
+            subordinates = employee.get_subordinate_employees() if hasattr(employee, 'get_subordinate_employees') else Employee.objects.none()
+            # Include self
+            return Employee.objects.filter(
+                Q(id__in=subordinates.values_list('id', flat=True)) | Q(id=employee.id),
+                is_active=True
+            )
+        else:
+            # Regular employee sees only themselves
+            return Employee.objects.filter(id=employee.id, is_active=True)
+    
+    def get_role_description(self, role):
+        """
+        Get description for user role
+        """
+        descriptions = {
+            "SUPERUSER": "Superuser - Can view and manage all employees",
+            "ADMIN": "Admin - Can view and manage all employees",
+            "CEO": "CEO - Can view all employees in the company",
+            "DEPARTMENT_MANAGER": "Department Manager - Can view employees in their department",
+            "TEAM_MANAGER": "Team Manager - Can view and manage subordinates",
+            "EMPLOYEE": "Employee - Can view only their own information",
+            "GUEST": "Guest - Limited access"
+        }
+        return descriptions.get(role, "Unknown role")
 
     def apply_filters(self, request, employees):
         """
@@ -1084,14 +1165,80 @@ class EmployeeDashboardAPIView(APIView):
         user = request.user
         employee = user.employee_get
         
-        # Get user's role and employees using RoleManager
-        user_role = RoleManager.get_user_role(user, employee)
-        employees = RoleManager.get_employees_by_role(user, employee, user_role)
+        # Get user's role and employees
+        user_role = self.get_user_role(user, employee)
+        employees = self.get_employees_by_role(user, employee, user_role)
         
         # Get dashboard data based on role
         dashboard_data = self.get_dashboard_data(user, employee, user_role, employees)
         
         return Response(dashboard_data, status=200)
+    
+    def get_user_role(self, user, employee):
+        """
+        Determine user's role based on permissions and relationships
+        """
+        if not employee:
+            return "GUEST"
+        
+        # Check if superuser
+        if user.is_superuser:
+            return "SUPERUSER"
+        
+        # Check if user has view all employees permission (CEO/Admin level)
+        if user.has_perm("employee.view_all_employees") or user.has_perm("employee.view_employee"):
+            # Check if has company-level access
+            if hasattr(employee, 'employee_work_info') and employee.employee_work_info:
+                return "CEO"
+            return "ADMIN"
+        
+        # Check if user is a manager (has subordinates)
+        is_manager = EmployeeWorkInformation.objects.filter(
+            reporting_manager_id=employee
+        ).exists()
+        
+        if is_manager:
+            # Check if department manager
+            if hasattr(employee, 'employee_work_info') and employee.employee_work_info:
+                dept = employee.employee_work_info.department_id
+                if dept:
+                    # Check if manages entire department
+                    dept_employees = EmployeeWorkInformation.objects.filter(
+                        department_id=dept
+                    ).exclude(reporting_manager_id=employee)
+                    if not dept_employees.exists():
+                        return "DEPARTMENT_MANAGER"
+            return "TEAM_MANAGER"
+        
+        return "EMPLOYEE"
+    
+    def get_employees_by_role(self, user, employee, role):
+        """
+        Get employees based on user's role
+        """
+        if role == "SUPERUSER" or role == "ADMIN" or role == "CEO":
+            # Superuser/Admin/CEO can see all employees
+            return Employee.objects.filter(is_active=True)
+        elif role == "DEPARTMENT_MANAGER":
+            # Department manager sees employees in their department
+            if hasattr(employee, 'employee_work_info') and employee.employee_work_info:
+                dept = employee.employee_work_info.department_id
+                if dept:
+                    return Employee.objects.filter(
+                        employee_work_info__department_id=dept,
+                        is_active=True
+                    )
+        elif role == "TEAM_MANAGER":
+            # Team manager sees their subordinates
+            subordinates = employee.get_subordinate_employees() if hasattr(employee, 'get_subordinate_employees') else Employee.objects.none()
+            # Include self
+            return Employee.objects.filter(
+                Q(id__in=subordinates.values_list('id', flat=True)) | Q(id=employee.id),
+                is_active=True
+            )
+        else:
+            # Regular employee sees only themselves
+            return Employee.objects.filter(id=employee.id, is_active=True)
 
     def get_dashboard_data(self, user, employee, role, employees):
         """
@@ -1279,9 +1426,9 @@ class RoleBasedEmployeeListAPIView(APIView):
         user = request.user
         employee = user.employee_get
         
-        # Get user's role and employees using RoleManager
-        user_role = RoleManager.get_user_role(user, employee)
-        employees = RoleManager.get_employees_by_role(user, employee, user_role)
+        # Get user's role and employees
+        user_role = self.get_user_role(user, employee)
+        employees = self.get_employees_by_role(user, employee, user_role)
         
         # Apply filters
         employees = self.apply_filters(request, employees)
@@ -1299,6 +1446,72 @@ class RoleBasedEmployeeListAPIView(APIView):
         response_data.data.update(additional_data)
         
         return response_data
+    
+    def get_user_role(self, user, employee):
+        """
+        Determine user's role based on permissions and relationships
+        """
+        if not employee:
+            return "GUEST"
+        
+        # Check if superuser
+        if user.is_superuser:
+            return "SUPERUSER"
+        
+        # Check if user has view all employees permission (CEO/Admin level)
+        if user.has_perm("employee.view_all_employees") or user.has_perm("employee.view_employee"):
+            # Check if has company-level access
+            if hasattr(employee, 'employee_work_info') and employee.employee_work_info:
+                return "CEO"
+            return "ADMIN"
+        
+        # Check if user is a manager (has subordinates)
+        is_manager = EmployeeWorkInformation.objects.filter(
+            reporting_manager_id=employee
+        ).exists()
+        
+        if is_manager:
+            # Check if department manager
+            if hasattr(employee, 'employee_work_info') and employee.employee_work_info:
+                dept = employee.employee_work_info.department_id
+                if dept:
+                    # Check if manages entire department
+                    dept_employees = EmployeeWorkInformation.objects.filter(
+                        department_id=dept
+                    ).exclude(reporting_manager_id=employee)
+                    if not dept_employees.exists():
+                        return "DEPARTMENT_MANAGER"
+            return "TEAM_MANAGER"
+        
+        return "EMPLOYEE"
+    
+    def get_employees_by_role(self, user, employee, role):
+        """
+        Get employees based on user's role
+        """
+        if role == "SUPERUSER" or role == "ADMIN" or role == "CEO":
+            # Superuser/Admin/CEO can see all employees
+            return Employee.objects.filter(is_active=True)
+        elif role == "DEPARTMENT_MANAGER":
+            # Department manager sees employees in their department
+            if hasattr(employee, 'employee_work_info') and employee.employee_work_info:
+                dept = employee.employee_work_info.department_id
+                if dept:
+                    return Employee.objects.filter(
+                        employee_work_info__department_id=dept,
+                        is_active=True
+                    )
+        elif role == "TEAM_MANAGER":
+            # Team manager sees their subordinates
+            subordinates = employee.get_subordinate_employees() if hasattr(employee, 'get_subordinate_employees') else Employee.objects.none()
+            # Include self
+            return Employee.objects.filter(
+                Q(id__in=subordinates.values_list('id', flat=True)) | Q(id=employee.id),
+                is_active=True
+            )
+        else:
+            # Regular employee sees only themselves
+            return Employee.objects.filter(id=employee.id, is_active=True)
 
     def apply_filters(self, request, employees):
         """
