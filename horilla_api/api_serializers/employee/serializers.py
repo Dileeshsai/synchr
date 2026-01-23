@@ -85,6 +85,12 @@ class EmployeeWorkInformationSerializer(serializers.ModelSerializer):
     employee_type_name = serializers.CharField(
         source="employee_type_id.employee_type", read_only=True
     )
+    employee_first_name = serializers.CharField(
+        source="employee_id.employee_first_name", read_only=True
+    )
+    employee_last_name = serializers.CharField(
+        source="employee_id.employee_last_name", read_only=True
+    )
     reporting_manager_first_name = serializers.CharField(
         source="reporting_manager_id.employee_first_name", read_only=True
     )

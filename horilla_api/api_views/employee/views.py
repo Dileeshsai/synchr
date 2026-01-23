@@ -308,6 +308,7 @@ class EmployeeWorkInformationAPIView(APIView):
 
     def get(self,request,pk=None):
         employee_id = request.GET.get("employee_id", None)
+        reporting_manager_id = request.GET.get("reporting_manager_id", None)
         if pk:
             work_info = EmployeeWorkInformation.objects.get(pk=pk)
             if (
@@ -321,6 +322,8 @@ class EmployeeWorkInformationAPIView(APIView):
             queryset = EmployeeWorkInformation.objects.all()
             if employee_id:
                 queryset = queryset.filter(employee_id=employee_id)
+            if reporting_manager_id:
+                queryset = queryset.filter(reporting_manager_id=reporting_manager_id)
             serializer = EmployeeWorkInformationSerializer(queryset, many=True)
             return Response(serializer.data, status=200)
 
@@ -954,21 +957,79 @@ class EmployeeBulkArchiveView(APIView):
 
     @method_decorator(permission_required("employee.delete_employee"))
     def post(self, request, is_active):
+        # Convert string parameter to boolean
+        if isinstance(is_active, str):
+            is_active = is_active.lower() == 'true'
+        
         ids = request.data.get("ids")
-        error = []
-        for employee_id in ids:
-            employee = Employee.objects.get(id=employee_id)
-            employee.is_active = is_active
-            employee.employee_user_id.is_active = is_active
-            if employee.get_archive_condition() is False:
-                employee.save()
-            error.append(
-                {
-                    "employee": str(employee),
-                    "error": "Related model found for this employee. ",
-                }
+        
+        # Validate that ids is provided and is a list
+        if not ids:
+            return Response(
+                {"error": "Please provide 'ids' field with a list of employee IDs"},
+                status=status.HTTP_400_BAD_REQUEST
             )
-        return Response(error, status=200)
+        
+        if not isinstance(ids, list):
+            return Response(
+                {"error": "'ids' must be a list of employee IDs"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if len(ids) == 0:
+            return Response(
+                {"error": "Please provide at least one employee ID"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        results = []
+        errors = []
+        
+        for employee_id in ids:
+            try:
+                employee = Employee.objects.get(id=employee_id)
+                employee.is_active = is_active
+                employee.employee_user_id.is_active = is_active
+                
+                # Check if employee can be archived
+                archive_condition = employee.get_archive_condition()
+                if archive_condition is False:
+                    employee.save()
+                    results.append({
+                        "employee_id": employee_id,
+                        "employee": str(employee),
+                        "status": "archived" if not is_active else "unarchived",
+                        "success": True
+                    })
+                else:
+                    # Employee cannot be archived due to related models
+                    errors.append({
+                        "employee_id": employee_id,
+                        "employee": str(employee),
+                        "error": archive_condition if isinstance(archive_condition, dict) else "Related model found for this employee",
+                        "success": False
+                    })
+            except Employee.DoesNotExist:
+                errors.append({
+                    "employee_id": employee_id,
+                    "error": "Employee not found",
+                    "success": False
+                })
+            except Exception as e:
+                errors.append({
+                    "employee_id": employee_id,
+                    "error": str(e),
+                    "success": False
+                })
+        
+        return Response({
+            "success": len(errors) == 0,
+            "results": results,
+            "errors": errors,
+            "total": len(ids),
+            "successful": len(results),
+            "failed": len(errors)
+        }, status=200)
 
 
 class EmployeeArchiveView(APIView):
@@ -976,6 +1037,10 @@ class EmployeeArchiveView(APIView):
 
     @method_decorator(permission_required("employee.delete_employee"))
     def post(self, request, id, is_active):
+        # Convert string parameter to boolean
+        if isinstance(is_active, str):
+            is_active = is_active.lower() == 'true'
+        
         employee = Employee.objects.get(id=id)
         employee.is_active = is_active
         employee.employee_user_id.is_active = is_active

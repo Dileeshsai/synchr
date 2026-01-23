@@ -29,7 +29,7 @@ from django.contrib.auth.models import User
 from django.core.cache import cache
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import models
-from django.db.models import F, ProtectedError
+from django.db.models import F, ProtectedError, Exists, OuterRef
 from django.db.models.query import QuerySet
 from django.forms import DateInput, Select
 from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
@@ -3357,16 +3357,28 @@ def organisation_chart(request):
         request.GET.get("employee_work_info__company_id") == None
         and selected_company != "all"
     ):
+        # Find employees who ARE reporting managers (have subordinates)
         reporting_managers = Employee.objects.filter(
             is_active=True,
-            reporting_manager__isnull=False,
             employee_work_info__company_id=selected_company,
-        ).distinct()
+        ).annotate(
+            has_subordinates=models.Exists(
+                EmployeeWorkInformation.objects.filter(
+                    reporting_manager_id=models.OuterRef('pk')
+                )
+            )
+        ).filter(has_subordinates=True).distinct()
     else:
+        # Find employees who ARE reporting managers (have subordinates)
         reporting_managers = Employee.objects.filter(
             is_active=True,
-            reporting_manager__isnull=False,
-        ).distinct()
+        ).annotate(
+            has_subordinates=models.Exists(
+                EmployeeWorkInformation.objects.filter(
+                    reporting_manager_id=models.OuterRef('pk')
+                )
+            )
+        ).filter(has_subordinates=True).distinct()
 
     # Iterate through the queryset and add reporting manager id and name to the dictionary
     result_dict = {item.id: item.get_full_name() for item in reporting_managers}
@@ -3423,15 +3435,28 @@ def organisation_chart(request):
         request.GET.get("employee_work_info__company_id") == None
         and selected_company != "all"
     ):
+        # Find employees who ARE reporting managers (have subordinates)
         reporting_managers = Employee.objects.filter(
             is_active=True,
-            reporting_manager__isnull=False,
             employee_work_info__company_id=selected_company,
-        ).distinct()
+        ).annotate(
+            has_subordinates=models.Exists(
+                EmployeeWorkInformation.objects.filter(
+                    reporting_manager_id=models.OuterRef('pk')
+                )
+            )
+        ).filter(has_subordinates=True).distinct()
     else:
+        # Find employees who ARE reporting managers (have subordinates)
         reporting_managers = Employee.objects.filter(
-            is_active=True, reporting_manager__isnull=False
-        ).distinct()
+            is_active=True,
+        ).annotate(
+            has_subordinates=models.Exists(
+                EmployeeWorkInformation.objects.filter(
+                    reporting_manager_id=models.OuterRef('pk')
+                )
+            )
+        ).filter(has_subordinates=True).distinct()
 
     manager = request.user.employee_get
 
