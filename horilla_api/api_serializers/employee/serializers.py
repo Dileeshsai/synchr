@@ -6,6 +6,7 @@ from employee.models import (
     DisciplinaryAction,
     Employee,
     EmployeeBankDetails,
+    EmployeeTag,
     EmployeeWorkInformation,
     Policy,
 )
@@ -17,7 +18,9 @@ from ...api_methods.employee.methods import get_next_badge_id
 class ActiontypeSerializer(serializers.ModelSerializer):
     class Meta:
         model = Actiontype
-        fields = ["id", "title", "action_type"]
+        # Expose block_option as well so frontend can manage
+        # "Block login access" without affecting other behavior.
+        fields = ["id", "title", "action_type", "block_option"]
 
 
 class EmployeeListSerializer(serializers.ModelSerializer):
@@ -123,6 +126,12 @@ class EmployeeBankDetailsSerializer(serializers.ModelSerializer):
 class EmployeeTypeSerializer(serializers.ModelSerializer):
     class Meta:
         model = EmployeeType
+        fields = "__all__"
+
+
+class EmployeeTagSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EmployeeTag
         fields = "__all__"
 
 

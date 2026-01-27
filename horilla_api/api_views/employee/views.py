@@ -20,9 +20,11 @@ from employee.models import (
     Employee,
     EmployeeBankDetails,
     EmployeeType,
+    EmployeeTag,
     EmployeeWorkInformation,
     Policy,
 )
+from base.models import JobPosition
 from employee.views import work_info_export, work_info_import
 from horilla.decorators import owner_can_enter
 from horilla_api.api_decorators.base.decorators import permission_required
@@ -46,6 +48,7 @@ from ...api_serializers.employee.serializers import (
     EmployeeSelectorSerializer,
     EmployeeSerializer,
     EmployeeTypeSerializer,
+    EmployeeTagSerializer,
     EmployeeWorkInformationSerializer,
     PolicySerializer,
 )
@@ -74,22 +77,114 @@ def object_delete(cls, pk):
 
 class EmployeeTypeAPIView(APIView):
     """
-    Retrieves employee types.
+    CRUD API for employee types.
 
     Methods:
-        get(request, pk=None): Returns a single employee type if pk is provided, otherwise returns all employee types.
+        GET  /employee-type/           → list
+        GET  /employee-type/<pk>/      → detail
+        POST /employee-type/           → create
+        PUT  /employee-type/<pk>/      → update
+        DELETE /employee-type/<pk>/    → delete
     """
 
+    serializer_class = EmployeeTypeSerializer
     permission_classes = [IsAuthenticated]
 
     def get(self, request, pk=None):
         if pk:
-            employee_type = EmployeeType.objects.get(id=pk)
-            serializer = EmployeeTypeSerializer(employee_type)
+            employee_type = object_check(EmployeeType, pk)
+            if employee_type is None:
+                return Response({"error": "EmployeeType not found"}, status=404)
+            serializer = self.serializer_class(employee_type)
             return Response(serializer.data, status=200)
         employee_type = EmployeeType.objects.all()
-        serializer = EmployeeTypeSerializer(employee_type, many=True)
+        serializer = self.serializer_class(employee_type, many=True)
         return Response(serializer.data, status=200)
+
+    @method_decorator(permission_required("base.add_employeetype"), name="dispatch")
+    def post(self, request):
+        serializer = self.serializer_class(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=201)
+        return Response(serializer.errors, status=400)
+
+    @method_decorator(permission_required("base.change_employeetype"), name="dispatch")
+    def put(self, request, pk):
+        employee_type = object_check(EmployeeType, pk)
+        if employee_type is None:
+            return Response({"error": "EmployeeType not found"}, status=404)
+        serializer = self.serializer_class(employee_type, data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=200)
+        return Response(serializer.errors, status=400)
+
+    @method_decorator(permission_required("base.delete_employeetype"), name="dispatch")
+    def delete(self, request, pk):
+        employee_type = object_check(EmployeeType, pk)
+        if employee_type is None:
+            return Response({"error": "EmployeeType not found"}, status=404)
+        response, status_code = object_delete(EmployeeType, pk)
+        return Response(response, status=status_code)
+
+
+class EmployeeTagAPIView(APIView):
+    """
+    CRUD API for employee tags.
+
+    Methods:
+        GET  /employee-tag/           → list
+        GET  /employee-tag/<pk>/      → detail
+        POST /employee-tag/           → create
+        PUT  /employee-tag/<pk>/      → update
+        DELETE /employee-tag/<pk>/    → delete
+    """
+
+    serializer_class = EmployeeTagSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk=None):
+        if pk:
+            tag = object_check(EmployeeTag, pk)
+            if tag is None:
+                return Response({"error": "EmployeeTag not found"}, status=404)
+            serializer = self.serializer_class(tag)
+            return Response(serializer.data, status=200)
+        tags = EmployeeTag.objects.all()
+        serializer = self.serializer_class(tags, many=True)
+        return Response(serializer.data, status=200)
+
+    @method_decorator(permission_required("employee.add_employeetag"), name="dispatch")
+    def post(self, request):
+        serializer = self.serializer_class(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=201)
+        return Response(serializer.errors, status=400)
+
+    @method_decorator(
+        permission_required("employee.change_employeetag"), name="dispatch"
+    )
+    def put(self, request, pk):
+        tag = object_check(EmployeeTag, pk)
+        if tag is None:
+            return Response({"error": "EmployeeTag not found"}, status=404)
+        serializer = self.serializer_class(tag, data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=200)
+        return Response(serializer.errors, status=400)
+
+    @method_decorator(
+        permission_required("employee.delete_employeetag"), name="dispatch"
+    )
+    def delete(self, request, pk):
+        tag = object_check(EmployeeTag, pk)
+        if tag is None:
+            return Response({"error": "EmployeeTag not found"}, status=404)
+        response, status_code = object_delete(EmployeeTag, pk)
+        return Response(response, status=status_code)
 
 
 class EmployeeAPIView(APIView):

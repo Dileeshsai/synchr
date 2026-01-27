@@ -454,7 +454,8 @@ class EmployeeType(HorillaModel):
         return str(self.employee_type)
 
     def clean(self, *args, **kwargs):
-        super().clean(*args, **kwargs)
+        # Call base clean without propagating ORM-specific kwargs like force_insert/update_fields
+        super().clean()
         request = getattr(_thread_locals, "request", None)
         if request and request.POST:
             company = request.POST.getlist("company_id", None)
@@ -472,9 +473,9 @@ class EmployeeType(HorillaModel):
         return
 
     def save(self, *args, **kwargs):
-        super().save(*args, **kwargs)
-        self.clean(*args, **kwargs)
-        return self
+        # Run model validation before saving
+        self.clean()
+        return super().save(*args, **kwargs)
 
 
 class EmployeeShiftDay(models.Model):

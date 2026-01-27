@@ -18,6 +18,16 @@ urlpatterns = [
     ),
     path("employee-type/", views.EmployeeTypeAPIView.as_view(), name="api-employees"),
     path(
+        "employee-tag/",
+        views.EmployeeTagAPIView.as_view(),
+        name="api-employee-tag-list",
+    ),
+    path(
+        "employee-tag/<int:pk>/",
+        views.EmployeeTagAPIView.as_view(),
+        name="api-employee-tag-detail",
+    ),
+    path(
         "list/employees/",
         views.EmployeeListAPIView.as_view(),
         name="api-employee-list-detailed",
