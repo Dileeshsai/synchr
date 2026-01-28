@@ -47,6 +47,46 @@ urlpatterns = [
     path("attendance-hour-account/", AttendanceOverTimeView.as_view(), name="api-"),
     path("late-come-early-out-view/", LateComeEarlyOutView.as_view(), name="api-"),
     path("late-come-early-out-view/<int:pk>/", LateComeEarlyOutView.as_view(), name="api-"),
+    path(
+        "validation-condition/",
+        ValidationConditionAPIView.as_view(),
+        name="api-validation-condition",
+    ),
+    path(
+        "validation-condition/<int:pk>/",
+        ValidationConditionAPIView.as_view(),
+        name="api-validation-condition-detail",
+    ),
+    path(
+        "break-point/",
+        ValidationConditionAPIView.as_view(),
+        name="api-break-point",
+    ),
+    path(
+        "break-point/<int:pk>/",
+        ValidationConditionAPIView.as_view(),
+        name="api-break-point-detail",
+    ),
+    path(
+        "check-in-out-settings/",
+        AttendanceGeneralSettingAPIView.as_view(),
+        name="api-check-in-out-settings",
+    ),
+    path(
+        "check-in-out-settings/<int:pk>/",
+        AttendanceGeneralSettingAPIView.as_view(),
+        name="api-check-in-out-settings-detail",
+    ),
+    path(
+        "grace-time/",
+        GraceTimeAPIView.as_view(),
+        name="api-grace-time-list",
+    ),
+    path(
+        "grace-time/<int:pk>/",
+        GraceTimeAPIView.as_view(),
+        name="api-grace-time-detail",
+    ),
     path("attendance-activity/", AttendanceActivityView.as_view(), name="api-"),
     path("today-attendance/", TodayAttendance.as_view(), name="api-"),
     path("offline-employees/count/", OfflineEmployeesCountView.as_view(), name="api-"),

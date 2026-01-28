@@ -207,6 +207,66 @@ class AttendanceActivitySerializer(serializers.ModelSerializer):
         fields = "__all__"
 
 
+class AttendanceValidationConditionSerializer(serializers.ModelSerializer):
+    """
+    Serializer for AttendanceValidationCondition (attendance break-point / validation condition).
+    """
+
+    class Meta:
+        model = AttendanceValidationCondition
+        fields = [
+            "id",
+            "validation_at_work",
+            "minimum_overtime_to_approve",
+            "overtime_cutoff",
+            "auto_approve_ot",
+            "company_id",
+            "created_at",
+        ]
+
+
+class AttendanceGeneralSettingSerializer(serializers.ModelSerializer):
+    """
+    Serializer for AttendanceGeneralSetting (check in/check out settings).
+    """
+    company_name = serializers.CharField(
+        source="company_id.company", read_only=True, allow_null=True
+    )
+
+    class Meta:
+        model = AttendanceGeneralSetting
+        fields = [
+            "id",
+            "time_runner",
+            "enable_check_in",
+            "company_id",
+            "company_name",
+            "created_at",
+        ]
+
+
+class GraceTimeSerializer(serializers.ModelSerializer):
+    """
+    Serializer for GraceTime (grace time settings).
+    """
+
+    allowed_time_in_secs = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = GraceTime
+        fields = [
+            "id",
+            "allowed_time",
+            "allowed_time_in_secs",
+            "allowed_clock_in",
+            "allowed_clock_out",
+            "is_default",
+            "is_active",
+            "company_id",
+            "created_at",
+        ]
+
+
 class MailTemplateSerializer(serializers.ModelSerializer):
     class Meta:
         model = HorillaMailTemplate

@@ -255,4 +255,14 @@ urlpatterns = [
     path(
         "check-user-level", views.CheckUserLevel.as_view(), name="api-check-user-level"
     ),
+    path(
+        "biometric-attendance/",
+        views.BiometricAttendanceAPIView.as_view(),
+        name="api-biometric-attendance",
+    ),
+    path(
+        "attendance-allowed-ip/",
+        views.AttendanceAllowedIPAPIView.as_view(),
+        name="api-attendance-allowed-ip",
+    ),
 ]

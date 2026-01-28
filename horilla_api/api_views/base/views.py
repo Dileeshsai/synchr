@@ -13,6 +13,8 @@ from base.filters import (
     WorkTypeRequestFilter,
 )
 from base.models import (
+    AttendanceAllowedIP,
+    BiometricAttendance,
     Company,
     Department,
     EmployeeShift,
@@ -44,6 +46,8 @@ from ...api_decorators.base.decorators import (
 )
 from ...api_methods.base.methods import groupby_queryset, permission_based_queryset
 from ...api_serializers.base.serializers import (
+    AttendanceAllowedIPSerializer,
+    BiometricAttendanceSerializer,
     CompanySerializer,
     DepartmentSerializer,
     EmployeeShiftScheduleSerializer,
@@ -1300,3 +1304,67 @@ class CheckUserLevel(APIView):
         if request.user.has_perm(perm):
             return Response(status=200)
         return Response({"error": "No permission"}, status=400)
+
+
+class BiometricAttendanceAPIView(APIView):
+    """
+    GET: Return current biometric attendance setting (single instance, create if none).
+    PATCH: Update is_installed (activate/deactivate biometric attendance).
+    Matches backend UI: /settings/activate-biometric-attendance and enable_biometric_attendance_view.
+    """
+    permission_classes = [IsAuthenticated]
+    serializer_class = BiometricAttendanceSerializer
+
+    @method_decorator(permission_required("base.view_biometricattendance"))
+    def get(self, request):
+        instance = BiometricAttendance.objects.first()
+        if not instance:
+            instance = BiometricAttendance.objects.create(is_installed=False)
+        serializer = self.serializer_class(instance)
+        return Response(serializer.data, status=200)
+
+    @method_decorator(permission_required("base.change_biometricattendance"))
+    def patch(self, request):
+        instance = BiometricAttendance.objects.first()
+        if not instance:
+            instance = BiometricAttendance.objects.create(is_installed=False)
+        is_installed = request.data.get("is_installed")
+        if is_installed is not None:
+            instance.is_installed = bool(is_installed)
+            instance.save()
+        serializer = self.serializer_class(instance)
+        return Response(serializer.data, status=200)
+
+
+class AttendanceAllowedIPAPIView(APIView):
+    """
+    GET: Return current IP restriction setting and allowed IP list.
+    PATCH: Update is_enabled and/or full allowed_ips list.
+    Mirrors backend IP Restriction UI behavior.
+    """
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = AttendanceAllowedIPSerializer
+
+    @method_decorator(permission_required("attendance.add_attendance"))
+    def get(self, request):
+        instance = AttendanceAllowedIP.objects.first()
+        if not instance:
+            instance = AttendanceAllowedIP.objects.create(
+                is_enabled=False, additional_data={"allowed_ips": []}
+            )
+        serializer = self.serializer_class(instance)
+        return Response(serializer.data, status=200)
+
+    @method_decorator(permission_required("attendance.change_attendance"))
+    def patch(self, request):
+        instance = AttendanceAllowedIP.objects.first()
+        if not instance:
+            instance = AttendanceAllowedIP.objects.create(
+                is_enabled=False, additional_data={"allowed_ips": []}
+            )
+        serializer = self.serializer_class(instance, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=200)
+        return Response(serializer.errors, status=400)

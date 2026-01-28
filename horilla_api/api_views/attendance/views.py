@@ -5,6 +5,7 @@ from django.conf import settings
 from django.core.mail import EmailMessage
 from django.db.models import Case, CharField, F, Value, When
 from django.http import QueryDict
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.shortcuts import get_object_or_404
 from django.utils.decorators import method_decorator
 from rest_framework.pagination import PageNumberPagination
@@ -12,7 +13,14 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from attendance.models import Attendance, AttendanceActivity, EmployeeShiftDay
+from attendance.models import (
+    Attendance,
+    AttendanceActivity,
+    AttendanceGeneralSetting,
+    AttendanceValidationCondition,
+    EmployeeShiftDay,
+    GraceTime,
+)
 from attendance.views.clock_in_out import *
 from attendance.views.clock_in_out import clock_out
 from attendance.views.dashboard import (
@@ -33,10 +41,13 @@ from ...api_decorators.base.decorators import (
 from ...api_methods.base.methods import groupby_queryset, permission_based_queryset
 from ...api_serializers.attendance.serializers import (
     AttendanceActivitySerializer,
+    AttendanceGeneralSettingSerializer,
     AttendanceLateComeEarlyOutSerializer,
     AttendanceOverTimeSerializer,
     AttendanceRequestSerializer,
     AttendanceSerializer,
+    AttendanceValidationConditionSerializer,
+    GraceTimeSerializer,
     MailTemplateSerializer,
 )
 
@@ -679,6 +690,128 @@ class LateComeEarlyOutView(APIView):
         attendance = get_object_or_404(AttendanceLateComeEarlyOut, pk=pk)
         attendance.delete()
         return Response({"message": "Attendance deleted successfully"}, status=204)
+
+
+class ValidationConditionAPIView(APIView):
+    """
+    GET: Return the single AttendanceValidationCondition instance (or 404).
+    POST: Create the condition (only when none exists).
+    PUT: Update the condition by id.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk=None):
+        if pk:
+            condition = get_object_or_404(AttendanceValidationCondition, pk=pk)
+        else:
+            condition = AttendanceValidationCondition.objects.first()
+            if not condition:
+                return Response({"detail": "Not found."}, status=404)
+        serializer = AttendanceValidationConditionSerializer(condition)
+        return Response(serializer.data, status=200)
+
+    @method_decorator(permission_required("attendance.add_attendancevalidationcondition"))
+    def post(self, request):
+        serializer = AttendanceValidationConditionSerializer(data=request.data)
+        if serializer.is_valid():
+            try:
+                serializer.save()
+                return Response(serializer.data, status=201)
+            except DjangoValidationError as e:
+                detail = e.messages[0] if e.messages else str(e)
+                return Response({"detail": detail}, status=400)
+        return Response(serializer.errors, status=400)
+
+    @method_decorator(permission_required("attendance.change_attendancevalidationcondition"))
+    def put(self, request, pk):
+        condition = get_object_or_404(AttendanceValidationCondition, pk=pk)
+        serializer = AttendanceValidationConditionSerializer(
+            instance=condition, data=request.data, partial=True
+        )
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=200)
+        return Response(serializer.errors, status=400)
+
+
+class AttendanceGeneralSettingAPIView(APIView):
+    """
+    GET: List all AttendanceGeneralSetting instances (one per company).
+    PATCH: Update enable_check_in for a specific setting.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        settings = AttendanceGeneralSetting.objects.all()
+        serializer = AttendanceGeneralSettingSerializer(settings, many=True)
+        return Response(serializer.data, status=200)
+
+    @method_decorator(permission_required("attendance.change_attendancegeneralsetting"))
+    def patch(self, request, pk):
+        setting = get_object_or_404(AttendanceGeneralSetting, pk=pk)
+        serializer = AttendanceGeneralSettingSerializer(
+            instance=setting, data=request.data, partial=True
+        )
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=200)
+        return Response(serializer.errors, status=400)
+
+
+class GraceTimeAPIView(APIView):
+    """
+    CRUD API for GraceTime settings.
+
+    GET /grace-time/           -> list all grace times (default and non-default)
+    GET /grace-time/<id>/      -> retrieve a single grace time
+    POST /grace-time/          -> create a grace time
+    PATCH /grace-time/<id>/    -> partial update (e.g. toggles, allowed_time)
+    DELETE /grace-time/<id>/   -> delete a grace time
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk=None):
+        if pk:
+            instance = get_object_or_404(GraceTime, pk=pk)
+            serializer = GraceTimeSerializer(instance)
+            return Response(serializer.data, status=200)
+        queryset = GraceTime.objects.all().order_by("-is_default", "allowed_time")
+        serializer = GraceTimeSerializer(queryset, many=True)
+        return Response(serializer.data, status=200)
+
+    @method_decorator(permission_required("attendance.add_gracetime"))
+    def post(self, request):
+        serializer = GraceTimeSerializer(data=request.data)
+        if serializer.is_valid():
+            try:
+                instance = serializer.save()
+                return Response(GraceTimeSerializer(instance).data, status=201)
+            except DjangoValidationError as e:
+                detail = e.messages[0] if getattr(e, "messages", None) else str(e)
+                return Response({"detail": detail}, status=400)
+        return Response(serializer.errors, status=400)
+
+    @method_decorator(permission_required("attendance.change_gracetime"))
+    def patch(self, request, pk):
+        instance = get_object_or_404(GraceTime, pk=pk)
+        serializer = GraceTimeSerializer(instance=instance, data=request.data, partial=True)
+        if serializer.is_valid():
+            try:
+                instance = serializer.save()
+                return Response(GraceTimeSerializer(instance).data, status=200)
+            except DjangoValidationError as e:
+                detail = e.messages[0] if getattr(e, "messages", None) else str(e)
+                return Response({"detail": detail}, status=400)
+        return Response(serializer.errors, status=400)
+
+    @method_decorator(permission_required("attendance.delete_gracetime"))
+    def delete(self, request, pk):
+        instance = get_object_or_404(GraceTime, pk=pk)
+        instance.delete()
+        return Response(status=204)
 
 
 class AttendanceActivityView(APIView):

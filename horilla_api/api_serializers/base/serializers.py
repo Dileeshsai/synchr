@@ -5,6 +5,8 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
 from base.models import (
+    AttendanceAllowedIP,
+    BiometricAttendance,
     Company,
     Department,
     EmployeeShift,
@@ -21,6 +23,55 @@ from base.models import (
     WorkTypeRequest,
 )
 from horilla import horilla_middlewares
+
+
+class BiometricAttendanceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BiometricAttendance
+        fields = ["id", "is_installed", "company_id"]
+        read_only_fields = ["id", "company_id"]
+
+
+class AttendanceAllowedIPSerializer(serializers.ModelSerializer):
+    """
+    Expose AttendanceAllowedIP as:
+    - is_enabled: bool
+    - allowed_ips: list of strings (maps to additional_data.allowed_ips)
+    """
+
+    allowed_ips = serializers.ListField(
+        child=serializers.CharField(), required=False, allow_empty=True
+    )
+
+    class Meta:
+        model = AttendanceAllowedIP
+        fields = ["id", "is_enabled", "allowed_ips"]
+        read_only_fields = ["id"]
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data["allowed_ips"] = instance.additional_data.get("allowed_ips", [])
+        return data
+
+    def update(self, instance, validated_data):
+        allowed_ips = validated_data.pop("allowed_ips", None)
+        if allowed_ips is not None:
+            instance.additional_data = {"allowed_ips": allowed_ips}
+        instance.is_enabled = validated_data.get("is_enabled", instance.is_enabled)
+        # Use model clean() for validation (valid IPs/networks)
+        instance.clean()
+        instance.save()
+        return instance
+
+    def create(self, validated_data):
+        allowed_ips = validated_data.pop("allowed_ips", [])
+        instance = AttendanceAllowedIP.objects.create(
+            is_enabled=validated_data.get("is_enabled", False),
+            additional_data={"allowed_ips": allowed_ips},
+        )
+        instance.clean()
+        instance.save()
+        return instance
 
 
 class CompanySerializer(serializers.ModelSerializer):
