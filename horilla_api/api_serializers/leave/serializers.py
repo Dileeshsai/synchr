@@ -503,3 +503,13 @@ class LeaveRequestApproveSerializer(serializers.ModelSerializer):
             )
         data["available_leave"] = available_leave
         return data
+
+
+class PastLeaveRestrictionSerializer(serializers.Serializer):
+    """Serializer for EmployeePastLeaveRestrict (past leave application restriction)."""
+    enabled = serializers.BooleanField(required=False)
+
+
+class CompensatoryLeaveSettingSerializer(serializers.Serializer):
+    """Serializer for LeaveGeneralSetting compensatory_leave and related leave type."""
+    compensatory_leave = serializers.BooleanField(required=False)

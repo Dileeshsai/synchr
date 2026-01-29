@@ -43,4 +43,6 @@ urlpatterns = [
     path("check-request/", LeaveRequestGetPermissionCheckAPIView.as_view()),
     path("check-assign/", LeaveAssignGetPermissionCheckAPIView.as_view()),
     path("check-perm/", LeavePermissionCheckAPIView.as_view()),
+    path("settings/past-leave-restriction/", PastLeaveRestrictionAPIView.as_view()),
+    path("settings/compensatory-leave/", CompensatoryLeaveSettingAPIView.as_view()),
 ]

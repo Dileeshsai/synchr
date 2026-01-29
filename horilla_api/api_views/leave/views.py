@@ -1134,3 +1134,75 @@ class AllLeaveDetailsAPIView(APIView):
             serializer.save()
             return Response(serializer.data, status=201)
         return Response(serializer.errors, status=400)
+
+
+# Leave settings API (past leave restriction & compensatory leave)
+from leave.models import (
+    EmployeePastLeaveRestrict,
+    LeaveGeneralSetting,
+    LeaveType as LeaveTypeModel,
+)
+
+
+class PastLeaveRestrictionAPIView(APIView):
+    """GET/PATCH API for employee past leave restriction (allow/restrict applying leave for past dates)."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        instance = EmployeePastLeaveRestrict.objects.first()
+        if not instance:
+            instance = EmployeePastLeaveRestrict.objects.create(enabled=True)
+        return Response({"enabled": instance.enabled}, status=200)
+
+    def patch(self, request):
+        instance = EmployeePastLeaveRestrict.objects.first()
+        if not instance:
+            instance = EmployeePastLeaveRestrict.objects.create(enabled=True)
+        enabled = request.data.get("enabled")
+        if enabled is not None:
+            instance.enabled = bool(enabled)
+            instance.save()
+        return Response({"enabled": instance.enabled}, status=200)
+
+
+class CompensatoryLeaveSettingAPIView(APIView):
+    """GET/PATCH API for compensatory leave setting (LeaveGeneralSetting.compensatory_leave)."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        compensatory_leave = False
+        leave_type_data = None
+        gs = LeaveGeneralSetting.objects.first()
+        if gs:
+            compensatory_leave = gs.compensatory_leave
+        if compensatory_leave:
+            lt = LeaveTypeModel.objects.filter(is_compensatory_leave=True).first()
+            if lt:
+                leave_type_data = {"id": lt.id, "name": getattr(lt, "name", str(lt))}
+        return Response({
+            "compensatory_leave": compensatory_leave,
+            "leave_type": leave_type_data,
+        }, status=200)
+
+    def patch(self, request):
+        gs = LeaveGeneralSetting.objects.first()
+        if not gs:
+            gs = LeaveGeneralSetting.objects.create(compensatory_leave=False)
+        enabled = request.data.get("compensatory_leave")
+        if enabled is not None:
+            gs.compensatory_leave = bool(enabled)
+            gs.save()
+        leave_type_data = None
+        if gs.compensatory_leave:
+            lt = LeaveTypeModel.objects.filter(is_compensatory_leave=True).first()
+            if not lt:
+                lt = LeaveTypeModel.objects.get_or_create(
+                    is_compensatory_leave=True,
+                    defaults={"name": "Compensatory Leave Type", "payment": "paid"},
+                )[0]
+            if lt:
+                leave_type_data = {"id": lt.id, "name": getattr(lt, "name", str(lt))}
+        return Response({
+            "compensatory_leave": gs.compensatory_leave,
+            "leave_type": leave_type_data,
+        }, status=200)
