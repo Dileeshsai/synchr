@@ -1162,7 +1162,10 @@ class ShiftRequestDeleteView(APIView):
         try:
             shift_request = ShiftRequest.objects.get(id=pk)
             if not shift_request.approved:
-                raise
+                return Response(
+                    {"status": "failed", "error": "Cannot delete shift request that is not approved."},
+                    status=400,
+                )
             shift_request.delete()
 
         except ShiftRequest.DoesNotExist:

@@ -482,8 +482,13 @@ class ShiftRequestSerializer(serializers.ModelSerializer):
             return None  # Re
 
     def validate(self, attrs):
-        # Create an instance of the model with the provided data
-        instance = ShiftRequest(**attrs)
+        # On update, use the existing instance so clean() can exclude current id in is_any_request_exists()
+        if self.instance is not None:
+            instance = self.instance
+            for key, value in attrs.items():
+                setattr(instance, key, value)
+        else:
+            instance = ShiftRequest(**attrs)
 
         # Call the model's clean method for validation
         try:
