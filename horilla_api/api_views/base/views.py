@@ -401,9 +401,9 @@ class WorkTypeRequestView(APIView):
                     redirect=f"/employee/work-type-request-view?id={instance.id}",
                     api_redirect=f"/api/base/worktype-requests/{instance.id}",
                 )
-                return Response(serializer.data, status=201)
-            except Exception as E:
-                return Response(serializer.errors, status=400)
+            except Exception:
+                pass
+            return Response(serializer.data, status=201)
         return Response(serializer.errors, status=400)
 
     @check_approval_status(WorkTypeRequest, "base.change_worktyperequest")
@@ -500,9 +500,9 @@ class WorkRequestApproveView(APIView):
                         icon="checkmark",
                         api_redirect="/api/base/worktype-requests/<int:pk>/",
                     )
-                    return Response({"status": "approved"})
-                except Exception as e:
-                    return Response({"error": str(e)}, status=400)
+                except Exception:
+                    pass
+                return Response({"status": "approved"})
         else:
             return Response({"error": "You don't have permission"}, status=400)
 

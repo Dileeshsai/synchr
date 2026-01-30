@@ -21,6 +21,7 @@ from base.models import (
     ShiftRequest,
     WorkType,
     WorkTypeRequest,
+    WorkTypeRequestComment,
 )
 from horilla import horilla_middlewares
 
@@ -299,14 +300,15 @@ class RotatingShiftAssignSerializer(serializers.ModelSerializer):
         fields = "__all__"
 
     def validate(self, attrs):
-        # Create an instance of the model with the provided data
-        instance = RotatingShiftAssign(**attrs)
+        # Build instance for clean(): use existing pk on update so start_date >= today is not enforced for edits
+        if self.instance:
+            instance = RotatingShiftAssign(id=self.instance.pk, **attrs)
+        else:
+            instance = RotatingShiftAssign(**attrs)
 
-        # Call the model's clean method for validation
         try:
             instance.clean()
         except DjangoValidationError as e:
-            # Raise DRF's ValidationError with the same message
             raise serializers.ValidationError(e)
 
         return attrs
@@ -385,10 +387,13 @@ class WorkTypeRequestSerializer(serializers.ModelSerializer):
         source="work_type_id.work_type", read_only=True
     )
     previous_work_type_name = serializers.SerializerMethodField(read_only=True)
+    comment = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = WorkTypeRequest
-        fields = "__all__"
+        fields = [
+            f.name for f in WorkTypeRequest._meta.fields
+        ] + ["employee_first_name", "employee_last_name", "work_type_name", "previous_work_type_name", "comment"]
 
 
     
@@ -447,6 +452,14 @@ class WorkTypeRequestSerializer(serializers.ModelSerializer):
             return previous_work_type.work_type
         else:
             return None  # Return null if previous_work_type_id doesn't exist
+
+    def get_comment(self, instance):
+        comment_obj = (
+            WorkTypeRequestComment.objects.filter(request_id=instance)
+            .order_by("-id")
+            .first()
+        )
+        return (comment_obj.comment or None) if comment_obj else None
 
     def update(self, instance, validated_data):
         for attr, value in validated_data.items():

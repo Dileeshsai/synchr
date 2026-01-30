@@ -831,9 +831,10 @@ class RotatingShiftAssign(HorillaModel):
             )
             if siblings.exists() and siblings.first().id != self.id:
                 raise ValidationError(_("Only one active record allowed per employee"))
-            
-            if self.start_date < django.utils.timezone.now().date():
-              raise ValidationError(_("Date must be greater than or equal to today"))
+
+        # Only require start_date >= today when creating; allow past dates on update
+        if not self.pk and self.start_date and self.start_date < django.utils.timezone.now().date():
+            raise ValidationError(_("Date must be greater than or equal to today"))
 
 
 class BaserequestFile(models.Model):
