@@ -1,9 +1,11 @@
 from datetime import date, datetime, timedelta, timezone
 
 from django import template
+from django.apps import apps
 from django.conf import settings
 from django.core.mail import EmailMessage
-from django.db.models import Case, CharField, F, Value, When
+from django.db import IntegrityError
+from django.db.models import Case, CharField, F, Q, Value, When
 from django.http import QueryDict
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.shortcuts import get_object_or_404
@@ -225,23 +227,28 @@ class AttendanceView(APIView):
     filterset_class = AttendanceFilters
 
     def get_queryset(self, request, type):
+        # Align with backend attendance_view: only active employees (employee_id__is_active=True)
+        base_filter = {"employee_id__is_active": True}
         if type == "ot":
-
             condition = AttendanceValidationCondition.objects.first()
             minot = strtime_seconds("00:30")
             if condition is not None:
                 minot = strtime_seconds(condition.minimum_overtime_to_approve)
-                queryset = Attendance.objects.filter(
-                    overtime_second__gte=minot,
-                    attendance_validated=True,
-                )
-
+            queryset = Attendance.objects.filter(
+                overtime_second__gte=minot,
+                attendance_validated=True,
+                **base_filter,
+            )
         elif type == "validated":
-            queryset = Attendance.objects.filter(attendance_validated=True)
+            queryset = Attendance.objects.filter(
+                attendance_validated=True, **base_filter
+            )
         elif type == "non-validated":
-            queryset = Attendance.objects.filter(attendance_validated=False)
+            queryset = Attendance.objects.filter(
+                attendance_validated=False, **base_filter
+            )
         else:
-            queryset = Attendance.objects.all()
+            queryset = Attendance.objects.filter(**base_filter)
         user = request.user
         # checking user level permissions
         perm = "attendance.view_attendance"
@@ -276,22 +283,35 @@ class AttendanceView(APIView):
     def post(self, request):
         serializer = AttendanceSerializer(data=request.data)
         if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=200)
-        employee_id = request.data.get("employee_id")
-        attendance_date = request.data.get("attendance_date", date.today())
-        if Attendance.objects.filter(
-            employee_id=employee_id, attendance_date=attendance_date
-        ).exists():
+            try:
+                serializer.save()
+                return Response(serializer.data, status=200)
+            except IntegrityError:
+                return Response(
+                    {
+                        "error": [
+                            "Attendance for this employee on this date already exists."
+                        ]
+                    },
+                    status=400,
+                )
+        # Replace default unique-constraint message with a friendlier one
+        serializer_errors = serializer.errors
+        unique_error_msg = (
+            "The fields employee_id, attendance_date must make a unique set."
+        )
+        if "non_field_errors" in serializer_errors and any(
+            unique_error_msg in str(m) for m in serializer_errors["non_field_errors"]
+        ):
             return Response(
                 {
                     "error": [
-                        "Attendance for this employee on the current date already exists."
+                        "Attendance for this employee on this date already exists."
                     ]
                 },
                 status=400,
             )
-        return Response(serializer.errors, status=400)
+        return Response(serializer_errors, status=400)
 
     @method_decorator(permission_required("attendance.change_attendance"))
     def put(self, request, pk):
@@ -905,44 +925,61 @@ class OfflineEmployeesListView(APIView):
         return pagenation.get_paginated_response(page)
 
     def get_leave_status(self, queryset):
-
         today = date.today()
         queryset = queryset.distinct()
-        # Annotate each employee with their leave status
-        employees_with_leave_status = queryset.annotate(
-            leave_status=Case(
-                # Define different cases based on leave requests and attendance
+        # Build Case/When for leave status; skip leave lookups if leave app not installed
+        whens = []
+        if apps.is_installed("leave"):
+            whens = [
                 When(
-                    leaverequest_start_date_lte=today,
-                    leaverequest_end_date_gte=today,
-                    leaverequest__status="approved",
+                    Q(
+                        leaverequest_set__start_date__lte=today,
+                        leaverequest_set__end_date__gte=today,
+                        leaverequest_set__status="approved",
+                    ),
                     then=Value("On Leave"),
                 ),
                 When(
-                    leaverequest_start_date_lte=today,
-                    leaverequest_end_date_gte=today,
-                    leaverequest__status="requested",
+                    Q(
+                        leaverequest_set__start_date__lte=today,
+                        leaverequest_set__end_date__gte=today,
+                        leaverequest_set__status="requested",
+                    ),
                     then=Value("Waiting Approval"),
                 ),
                 When(
-                    leaverequest_start_date_lte=today,
-                    leaverequest_end_date_gte=today,
+                    Q(
+                        leaverequest_set__start_date__lte=today,
+                        leaverequest_set__end_date__gte=today,
+                        leaverequest_set__status__in=["cancelled", "rejected"],
+                    ),
                     then=Value("Canceled / Rejected"),
                 ),
-                When(
-                    employee_attendances__attendance_date=today, then=Value("Working")
+            ]
+        whens.append(
+            When(
+                employee_attendances__attendance_date=today,
+                then=Value("Working"),
+            )
+        )
+        employees_with_leave_status = (
+            queryset.annotate(
+                leave_status=Case(
+                    *whens,
+                    default=Value("Expected working"),
+                    output_field=CharField(),
                 ),
-                default=Value("Expected working"),  # Default status
-                output_field=CharField(),
-            ),
-            job_position_id=F("employee_work_info__job_position_id"),
-        ).values(
-            "employee_first_name",
-            "employee_last_name",
-            "leave_status",
-            "employee_profile",
-            "id",
-            "job_position_id",
+                job_position_id=F("employee_work_info__job_position_id"),
+            )
+            .values(
+                "employee_first_name",
+                "employee_last_name",
+                "leave_status",
+                "employee_profile",
+                "id",
+                "job_position_id",
+            )
+            .distinct()
         )
 
         for employee in employees_with_leave_status:

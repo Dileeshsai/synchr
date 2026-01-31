@@ -60,11 +60,17 @@ def attendance_search(request):
     if condition is not None and condition.minimum_overtime_to_approve is not None:
         minot = strtime_seconds(condition.minimum_overtime_to_approve)
 
-    validate_attendances = all_attendances.filter(attendance_validated=False)
-    attendances = all_attendances.filter(attendance_validated=True)
+    # Align with attendance_view: only active employees
+    validate_attendances = all_attendances.filter(
+        attendance_validated=False, employee_id__is_active=True
+    )
+    attendances = all_attendances.filter(
+        attendance_validated=True, employee_id__is_active=True
+    )
     ot_attendances = all_attendances.filter(
         overtime_second__gt=0,
         attendance_validated=True,
+        employee_id__is_active=True,
     )
 
     validate_attendances = AttendanceFilters(request.GET, validate_attendances).qs
