@@ -1,3 +1,4 @@
+import calendar
 from datetime import date, datetime, timedelta, timezone
 
 from django import template
@@ -8,6 +9,7 @@ from django.db import IntegrityError
 from django.db.models import Case, CharField, F, Q, Value, When
 from django.http import QueryDict
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.paginator import Paginator
 from django.shortcuts import get_object_or_404
 from django.utils.decorators import method_decorator
 from rest_framework.pagination import PageNumberPagination
@@ -15,6 +17,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from attendance.methods.utils import monthly_leave_days
 from attendance.models import (
     Attendance,
     AttendanceActivity,
@@ -22,6 +25,7 @@ from attendance.models import (
     AttendanceValidationCondition,
     EmployeeShiftDay,
     GraceTime,
+    WorkRecords,
 )
 from attendance.views.clock_in_out import *
 from attendance.views.clock_in_out import clock_out
@@ -32,7 +36,12 @@ from attendance.views.dashboard import (
 )
 from attendance.views.views import *
 from base.backends import ConfiguredEmailBackend
-from base.methods import generate_pdf, is_reportingmanager
+from base.methods import (
+    filtersubordinatesemployeemodel,
+    generate_pdf,
+    get_pagination,
+    is_reportingmanager,
+)
 from base.models import HorillaMailTemplate
 from employee.filters import EmployeeFilter
 
@@ -695,21 +704,41 @@ class LateComeEarlyOutView(APIView):
     Handles retrieval and deletion of late come and early out records.
 
     Methods:
-        get(request, pk=None): Retrieves a list of late come and early out records with filtering.
-        delete(request, pk=None): Deletes a specific late come or early out record by pk.
+        get(request): List with pagination and filters (search, type, attendance_date__gte/lte, etc.).
+        delete(request, pk): Deletes a specific late come or early out record by pk.
     """
 
     permission_classes = [IsAuthenticated]
 
     def get(self, request, pk=None):
-        data = LateComeEarlyOutFilter(request.GET)
-        serializer = AttendanceLateComeEarlyOutSerializer(data.qs, many=True)
-        return Response(serializer.data, status=200)
+        if pk:
+            obj = get_object_or_404(AttendanceLateComeEarlyOut, pk=pk)
+            serializer = AttendanceLateComeEarlyOutSerializer(obj)
+            return Response(serializer.data, status=200)
+        base_qs = AttendanceLateComeEarlyOut.objects.all().select_related(
+            "attendance_id", "employee_id"
+        )
+        filter_obj = LateComeEarlyOutFilter(request.GET, queryset=base_qs)
+        queryset = filter_obj.qs
+        self_reports = queryset.filter(employee_id__employee_user_id=request.user)
+        permission_based = filtersubordinates(
+            request, filter_obj.qs, "attendance.view_attendancelatecomeearlyout", field="employee_id"
+        )
+        queryset = (permission_based | self_reports).distinct().order_by(
+            "-attendance_id__attendance_date"
+        )
+        pagination = PageNumberPagination()
+        pagination.page_size = request.GET.get("page_size") or pagination.page_size
+        page = pagination.paginate_queryset(queryset, request)
+        serializer = AttendanceLateComeEarlyOutSerializer(page, many=True)
+        return pagination.get_paginated_response(serializer.data)
 
     def delete(self, request, pk=None):
-        attendance = get_object_or_404(AttendanceLateComeEarlyOut, pk=pk)
-        attendance.delete()
-        return Response({"message": "Attendance deleted successfully"}, status=204)
+        if not pk:
+            return Response({"detail": "Not found."}, status=404)
+        obj = get_object_or_404(AttendanceLateComeEarlyOut, pk=pk)
+        obj.delete()
+        return Response(status=204)
 
 
 class ValidationConditionAPIView(APIView):
@@ -836,18 +865,66 @@ class GraceTimeAPIView(APIView):
 
 class AttendanceActivityView(APIView):
     """
-    Retrieves attendance activity records.
+    Retrieves attendance activity records with filtering, permission-based visibility, and pagination.
 
     Method:
-        get(request, pk=None): Retrieves a list of all attendance activity records.
+        get(request): List with params: page, page_size, search, attendance_date_from,
+                      attendance_date_till, employee_id, etc. (AttendanceActivityFilter).
     """
 
     permission_classes = [IsAuthenticated]
 
-    def get(self, request, pk=None):
-        data = AttendanceActivity.objects.all()
-        serializer = AttendanceActivitySerializer(data, many=True)
-        return Response(serializer.data, status=200)
+    def get(self, request):
+        filter_obj = AttendanceActivityFilter(request.GET, queryset=AttendanceActivity.objects.all())
+        queryset = filter_obj.qs
+        self_activities = queryset.filter(employee_id__employee_user_id=request.user)
+        permission_based = filtersubordinates(
+            request, filter_obj.qs, "attendance.view_attendanceovertime", field="employee_id"
+        )
+        queryset = (permission_based | self_activities).distinct().order_by("-pk")
+        pagination = PageNumberPagination()
+        pagination.page_size = request.GET.get("page_size") or pagination.page_size
+        page = pagination.paginate_queryset(queryset, request)
+        serializer = AttendanceActivitySerializer(page, many=True)
+        return pagination.get_paginated_response(serializer.data)
+
+
+class AttendanceActivityBulkDeleteView(APIView):
+    """
+    Bulk delete attendance activity records.
+    POST with body: { "ids": [1, 2, 3] }
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from django.db import transaction
+        ids = request.data.get("ids") if isinstance(request.data, dict) else []
+        if not ids:
+            return Response(
+                {"detail": "No attendance activities selected for deletion."},
+                status=400,
+            )
+        try:
+            ids = [int(i) for i in ids]
+        except (ValueError, TypeError):
+            return Response({"detail": "Invalid list of IDs provided."}, status=400)
+        # Restrict to activities user can see (same permission as list)
+        base_qs = AttendanceActivity.objects.all()
+        self_activities = base_qs.filter(employee_id__employee_user_id=request.user)
+        permission_based = filtersubordinates(
+            request, base_qs, "attendance.view_attendanceovertime", field="employee_id"
+        )
+        allowed_qs = (permission_based | self_activities).distinct()
+        deletable = AttendanceActivity.objects.filter(id__in=ids).filter(
+            id__in=allowed_qs.values_list("id", flat=True)
+        )
+        if not request.user.has_perm("attendance.delete_attendanceactivity"):
+            return Response({"detail": "Permission denied."}, status=403)
+        with transaction.atomic():
+            count = deletable.count()
+            deletable.delete()
+        return Response({"deleted": count}, status=200)
 
 
 class TodayAttendance(APIView):
@@ -881,6 +958,152 @@ class TodayAttendance(APIView):
         return Response(
             {"marked_attendances_ratio": marked_attendances_ratio}, status=200
         )
+
+
+class WorkRecordsListAPIView(APIView):
+    """
+    Returns work records for a month: employees (paginated), month_dates, leave_dates,
+    and records (employee_id, date, work_record_type, message, is_leave_record).
+    Mirrors backend work_records_change_month logic.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        employee_filter_form = EmployeeFilter(request.GET or None)
+        employees_qs = filtersubordinatesemployeemodel(
+            request,
+            employee_filter_form.qs,
+            "attendance.view_attendance",
+        )
+        # Include current user's employee if available
+        employees_list = list(employees_qs)
+        if getattr(request.user, "employee_get", None):
+            emp = request.user.employee_get
+            if emp and emp not in employees_list:
+                employees_list.insert(0, emp)
+
+        month_str = request.GET.get(
+            "month", f"{date.today().year}-{date.today().month}"
+        )
+        try:
+            year, month = map(int, month_str.split("-"))
+        except (ValueError, AttributeError):
+            year, month = date.today().year, date.today().month
+
+        month_dates = [
+            datetime(year, month, day).date()
+            for week in calendar.monthcalendar(year, month)
+            for day in week
+            if day
+        ]
+
+        work_records = WorkRecords.objects.filter(
+            date__in=month_dates, employee_id__in=employees_list
+        ).select_related("employee_id", "shift_id", "attendance_id")
+
+        work_records_dict = {
+            (wr.employee_id.id, wr.date): wr for wr in work_records
+        }
+        leave_dates = monthly_leave_days(month, year)
+
+        data_items = []
+        for employee in employees_list:
+            employee_records = []
+            for current_date in month_dates:
+                work_record = work_records_dict.get((employee.id, current_date))
+                if work_record is None:
+                    is_holiday = current_date in leave_dates
+                    if is_holiday:
+                        work_record = type("Placeholder", (), {
+                            "work_record_type": "HD",
+                            "message": "Holiday/Company Leave",
+                            "is_leave_record": False,
+                            "date": current_date,
+                        })()
+                    elif current_date < date.today():
+                        work_record = type("Placeholder", (), {
+                            "work_record_type": "ABS",
+                            "message": "Absent",
+                            "is_leave_record": False,
+                            "date": current_date,
+                        })()
+                    else:
+                        work_record = type("Placeholder", (), {
+                            "work_record_type": "DFT",
+                            "message": "",
+                            "is_leave_record": False,
+                            "date": current_date,
+                        })()
+                employee_records.append((employee, work_record))
+            data_items.append((employee, employee_records))
+
+        page_size = int(request.GET.get("page_size") or get_pagination() or 50)
+        paginator = Paginator(data_items, page_size)
+        page_num = request.GET.get("page", 1)
+        try:
+            page_num = max(1, int(page_num))
+        except (TypeError, ValueError):
+            page_num = 1
+        page = paginator.get_page(page_num)
+
+        employees_payload = []
+        records_payload = []
+        for employee, employee_records in page.object_list:
+            employees_payload.append({
+                "id": employee.id,
+                "employee_first_name": getattr(
+                    employee, "employee_first_name", ""
+                ) or getattr(employee, "first_name", ""),
+                "employee_last_name": getattr(
+                    employee, "employee_last_name", ""
+                ) or getattr(employee, "last_name", ""),
+            })
+            for _emp, wr in employee_records:
+                date_str = wr.date.strftime("%Y-%m-%d") if hasattr(
+                    wr.date, "strftime"
+                ) else str(wr.date)
+                records_payload.append({
+                    "employee_id": employee.id,
+                    "date": date_str,
+                    "work_record_type": getattr(
+                        wr, "work_record_type", None
+                    ) or "DFT",
+                    "message": getattr(wr, "message", "") or "",
+                    "is_leave_record": getattr(wr, "is_leave_record", False),
+                })
+
+        # Work record type choices from model (for legend / labels)
+        type_choices = [
+            {"value": "FDP", "label": "Present"},
+            {"value": "HDP", "label": "Half Day Present"},
+            {"value": "ABS", "label": "Absent"},
+            {"value": "HD", "label": "Holiday/Company Leave"},
+            {"value": "CONF", "label": "Conflict"},
+            {"value": "DFT", "label": "Draft"},
+        ]
+
+        return Response({
+            "employees": employees_payload,
+            "records": records_payload,
+            "month_dates": [
+                d.strftime("%Y-%m-%d") for d in month_dates
+            ],
+            "leave_dates": [
+                d.strftime("%Y-%m-%d")
+                for d in leave_dates
+                if hasattr(d, "strftime")
+            ],
+            "type_choices": type_choices,
+            "pagination": {
+                "count": paginator.count,
+                "num_pages": paginator.num_pages,
+                "page": page_num,
+                "page_size": page_size,
+                "has_next": page.has_next(),
+                "has_previous": page.has_previous(),
+            },
+        }, status=200)
 
 
 class OfflineEmployeesCountView(APIView):

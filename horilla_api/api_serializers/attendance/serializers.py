@@ -188,6 +188,21 @@ class AttendanceLateComeEarlyOutSerializer(serializers.ModelSerializer):
     employee_last_name = serializers.CharField(
         source="employee_id.employee_last_name", read_only=True
     )
+    attendance_date = serializers.DateField(
+        source="attendance_id.attendance_date", read_only=True
+    )
+    attendance_clock_in_date = serializers.DateField(
+        source="attendance_id.attendance_clock_in_date", read_only=True, allow_null=True
+    )
+    attendance_clock_in = serializers.TimeField(
+        source="attendance_id.attendance_clock_in", read_only=True, allow_null=True
+    )
+    attendance_clock_out_date = serializers.DateField(
+        source="attendance_id.attendance_clock_out_date", read_only=True, allow_null=True
+    )
+    attendance_clock_out = serializers.TimeField(
+        source="attendance_id.attendance_clock_out", read_only=True, allow_null=True
+    )
 
     class Meta:
         model = AttendanceLateComeEarlyOut
