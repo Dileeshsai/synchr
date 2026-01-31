@@ -8,6 +8,27 @@ from horilla_api.api_views.attendance.permission_views import AttendancePermissi
 from horilla_api.api_views.attendance.views import *
 
 urlpatterns = [
+    # attendance-request* must come before "attendance/" so /attendance/attendance-request/ matches
+    path(
+        "attendance-request/",
+        AttendanceRequestView.as_view(),
+        name="api-attendance-request-view",
+    ),
+    path(
+        "attendance-request/<int:pk>",
+        AttendanceRequestView.as_view(),
+        name="api-attendance-request-detail",
+    ),
+    path(
+        "attendance-request-approve/<int:pk>",
+        AttendanceRequestApproveView.as_view(),
+        name="api-attendance-request-approve",
+    ),
+    path(
+        "attendance-request-cancel/<int:pk>",
+        AttendanceRequestCancelView.as_view(),
+        name="api-attendance-request-cancel",
+    ),
     path("clock-in/", ClockInAPIView.as_view(), name="api-check-in"),
     path("clock-out/", ClockOutAPIView.as_view(), name="api-check-out"),
     path("attendance/", AttendanceView.as_view(), name="api-attendance-list"),
@@ -18,26 +39,6 @@ urlpatterns = [
         name="api-attendance-list",
     ),
     path("attendance-validate/<int:pk>", ValidateAttendanceView.as_view()),
-    path(
-        "attendance-request/",
-        AttendanceRequestView.as_view(),
-        name="api-attendance-request-view",
-    ),
-    path(
-        "attendance-request/<int:pk>",
-        AttendanceRequestView.as_view(),
-        name="api-attendance-request-view",
-    ),
-    path(
-        "attendance-request-approve/<int:pk>",
-        AttendanceRequestApproveView.as_view(),
-        name="api-",
-    ),
-    path(
-        "attendance-request-cancel/<int:pk>",
-        AttendanceRequestCancelView.as_view(),
-        name="api-",
-    ),
     path("overtime-approve/<int:pk>", OvertimeApproveView.as_view(), name="api-"),
     path(
         "attendance-hour-account/<int:pk>/",

@@ -33,23 +33,22 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("accounts/", include("django.contrib.auth.urls")),
     path("accounts/", include("django.contrib.auth.urls")),
-    path("", include("base.urls")),
-    path("", include("horilla_automations.urls")),
-    path("", include("horilla_views.urls")),
-    path("employee/", include("employee.urls")),
-    path("horilla-widget/", include("horilla_widgets.urls")),
-    re_path(
-        "^inbox/notifications/", include(notifications.urls, namespace="notifications")
-    ),
-    path("i18n/", include("django.conf.urls.i18n")),
-    path("health/", health_check),
     path("api/v1/", include("horilla_api.urls")),
     path("api/facedetection/", include("facedetection.urls")),  # Face Detection URLs
     path("api/geofencing/", include("geofencing.urls")),  # Geofencing URLs
     path("chart-bot/", include("chart_bot.urls")),  # Chart Bot URLs
     path("chart-bot-v2/", include("chart_bot.urls_v2")),  # Professional Chart Bot URLs
     path("chart-bot-direct/", include("chart_bot.urls_direct")),  # Direct Chart Bot URLs (bypasses auth issues)
-    
+    path("health/", health_check),
+    path("employee/", include("employee.urls")),
+    path("horilla-widget/", include("horilla_widgets.urls")),
+    re_path(
+        "^inbox/notifications/", include(notifications.urls, namespace="notifications")
+    ),
+    path("i18n/", include("django.conf.urls.i18n")),
+    path("", include("base.urls")),
+    path("", include("horilla_automations.urls")),
+    path("", include("horilla_views.urls")),
 ]
 
 # Add custom error handlers
