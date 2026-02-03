@@ -1,4 +1,7 @@
-from django.db.models import ProtectedError
+import calendar
+import datetime
+
+from django.db.models import ProtectedError, Q
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -81,4 +84,53 @@ ProjectAPIView = create_crud_view(Project, ProjectSerializer, "Project")
 ProjectStageAPIView = create_crud_view(ProjectStage, ProjectStageSerializer, "ProjectStage")
 TaskAPIView = create_crud_view(Task, TaskSerializer, "Task")
 TimeSheetAPIView = create_crud_view(TimeSheet, TimeSheetSerializer, "TimeSheet")
+
+
+class TasksMyAPIView(APIView):
+    """
+    Returns tasks where the current user's employee is task_manager or task_member.
+    Aligns with tasks-list-individual-view. Supports project, stage, status query params.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        employee = getattr(request.user, "employee_get", None)
+        if not employee:
+            queryset = Task.objects.none()
+        else:
+            queryset = Task.objects.filter(
+                Q(task_managers=employee) | Q(task_members=employee)
+            ).distinct().order_by("-id")
+            project_id = request.query_params.get("project")
+            if project_id:
+                queryset = queryset.filter(project_id=project_id)
+            stage_id = request.query_params.get("stage")
+            if stage_id:
+                queryset = queryset.filter(stage_id=stage_id)
+            status = request.query_params.get("status")
+            if status:
+                queryset = queryset.filter(status=status)
+        paginator = PageNumberPagination()
+        page = paginator.paginate_queryset(queryset, request)
+        serializer = TaskSerializer(page, many=True)
+        return paginator.get_paginated_response(serializer.data)
+
+
+class ProjectsDueInMonthAPIView(APIView):
+    """
+    Returns projects with end_date in the current month, excluding expired.
+    Aligns with dashboard projects-due-in-this-month logic.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        today = datetime.date.today()
+        first_day = today.replace(day=1)
+        last_day = calendar.monthrange(today.year, today.month)[1]
+        last_day_of_month = today.replace(day=last_day)
+        queryset = Project.objects.filter(
+            Q(end_date__gte=first_day) & Q(end_date__lte=last_day_of_month)
+        ).exclude(status="expired").order_by("end_date")
+        serializer = ProjectSerializer(queryset, many=True)
+        return Response(serializer.data, status=200)
 

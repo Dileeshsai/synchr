@@ -680,7 +680,7 @@ def project_bulk_delete(request):
 
     # Delete in bulk
     if deletable_projects:
-        # Project.objects.filter(id__in=[p.id for p in deletable_projects]).delete()
+        Project.objects.filter(id__in=[p.id for p in deletable_projects]).delete()
         messages.success(
             request,
             _("{count} project(s) deleted successfully.").format(

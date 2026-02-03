@@ -110,6 +110,7 @@ class GetAvailableLeaveTypeSerializer(serializers.ModelSerializer):
     leave_type_id = serializers.SerializerMethodField()
     icon = serializers.SerializerMethodField()
     total_leave_days = serializers.SerializerMethodField()
+    leave_taken = serializers.SerializerMethodField()
 
     class Meta:
         model = AvailableLeave
@@ -120,6 +121,7 @@ class GetAvailableLeaveTypeSerializer(serializers.ModelSerializer):
             "available_days",
             "carryforward_days",
             "total_leave_days",
+            "leave_taken",
         ]
 
     def get_leave_type_id(self, obj):
@@ -130,11 +132,14 @@ class GetAvailableLeaveTypeSerializer(serializers.ModelSerializer):
     def get_icon(self, obj):
         try:
             return obj.leave_type_id.icon.url
-        except:
+        except Exception:
             return None
 
     def get_total_leave_days(self, obj):
         return obj.available_days + obj.carryforward_days
+
+    def get_leave_taken(self, obj):
+        return obj.leave_taken()
 
 
 class userLeaveRequestGetAllSerilaizer(serializers.ModelSerializer):

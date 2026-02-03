@@ -26,7 +26,26 @@ class EmployeeAvailableLeaveGetAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        employee = request.user.employee_get
+        employee_id_param = request.query_params.get("employee_id")
+        if employee_id_param:
+            try:
+                from employee.models import Employee
+
+                target = Employee.objects.get(pk=int(employee_id_param))
+                if target != request.user.employee_get and not request.user.has_perm(
+                    "employee.view_employee"
+                ):
+                    from base.methods import filtersubordinates
+
+                    if not filtersubordinates(
+                        request, Employee.objects.filter(pk=target.pk), "employee.view_employee"
+                    ).exists():
+                        target = request.user.employee_get
+                employee = target
+            except (ValueError, Employee.DoesNotExist):
+                employee = request.user.employee_get
+        else:
+            employee = request.user.employee_get
         available_leave = employee.available_leave.all()
         paginator = PageNumberPagination()
         page = paginator.paginate_queryset(available_leave, request)
