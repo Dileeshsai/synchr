@@ -145,6 +145,6 @@ def permission_required(function, perm):
         if request.user.has_perm(perm):
             return function(self, *args, **kwargs)
         else:
-            return Response({"message": "No permission"}, status=401)
+            return Response({"message": "You do not have permission to perform this action."}, status=status.HTTP_403_FORBIDDEN)
 
     return _function

@@ -31,9 +31,13 @@ env = environ.Env(
     ),
     ALLOWED_HOSTS=(list, ["*"]),
     CSRF_TRUSTED_ORIGINS=(list, ["http://localhost:8000", "http://192.168.0.5:8000", "http://124.123.127.160"]),
+    FRONTEND_URL=(str, "http://localhost:5173"),
 )
 
 env.read_env(os.path.join(BASE_DIR, ".env"), overwrite=True)
+
+# Frontend URL for password reset emails
+FRONTEND_URL = env("FRONTEND_URL")
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = env("SECRET_KEY")
@@ -246,6 +250,7 @@ SESSION_EXPIRE_AT_BROWSER_CLOSE = False  # Keep session active for mobile app
 # API settings for mobile app
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
         'rest_framework.authentication.TokenAuthentication',  # Primary for mobile app
         'rest_framework.authentication.SessionAuthentication',  # Fallback for web
     ],
