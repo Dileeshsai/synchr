@@ -1,5 +1,11 @@
+import io
+import logging
+import threading
+
+import pandas as pd
 from django.db.models import ProtectedError, Q
-from django.http import Http404
+from django.http import Http404, HttpResponse
+from django.template import Context, Template
 from django.utils.decorators import method_decorator
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import status
@@ -7,6 +13,7 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from django.core.mail import EmailMessage
 
 
 from employee.filters import (
@@ -25,6 +32,21 @@ from employee.models import (
     Policy,
 )
 from base.models import JobPosition
+from employee.methods.methods import (
+    bulk_create_department_import,
+    bulk_create_employee_import,
+    bulk_create_employee_types,
+    bulk_create_job_position_import,
+    bulk_create_job_role_import,
+    bulk_create_shifts,
+    bulk_create_user_import,
+    bulk_create_work_info_import,
+    bulk_create_work_types,
+    process_employee_records,
+    set_initial_password,
+    valid_import_file_headers,
+)
+from base.methods import filtersubordinatesemployeemodel
 from employee.views import work_info_export, work_info_import
 from horilla.decorators import owner_can_enter
 from horilla_api.api_decorators.base.decorators import permission_required
@@ -222,10 +244,27 @@ class EmployeeAPIView(APIView):
             serializer = EmployeeSerializer(employee)
             return Response(serializer.data)
         paginator = PageNumberPagination()
-        employees_queryset = Employee.objects.all()
+        # Apply is_active first (mirror Django UI): "False" = archived only, "True" = active only, missing = active only
+        is_active_param = request.GET.get("is_active")
+        if is_active_param is not None:
+            is_active_lower = str(is_active_param).strip().lower()
+            if is_active_lower == "false":
+                employees_queryset = Employee.objects.filter(is_active=False)
+            elif is_active_lower == "true":
+                employees_queryset = Employee.objects.filter(is_active=True)
+            else:
+                employees_queryset = Employee.objects.all()
+        else:
+            employees_queryset = Employee.objects.filter(is_active=True)
         employees_filter_queryset = self.filterset_class(
             request.GET, queryset=employees_queryset
         ).qs
+        if is_active_param is None:
+            employees_filter_queryset = employees_filter_queryset.filter(is_active=True)
+        # Align with backend UI: restrict to employees the user can see (permission/subordinates)
+        employees_filter_queryset = filtersubordinatesemployeemodel(
+            request, employees_filter_queryset, "employee.view_employee"
+        )
         field_name = request.GET.get("groupby_field", None)
         if field_name:
             url = request.build_absolute_uri()
@@ -474,13 +513,14 @@ class EmployeeWorkInfoExportView(APIView):
         return work_info_export(request)
 
 
+logger = logging.getLogger(__name__)
+
+
 class EmployeeWorkInfoImportView(APIView):
     """
     Endpoint for importing employee work information.
-
-    Methods:
-        get(request):
-            - Handles the importing of work information data based on user permissions.
+    GET: returns HTML import page (Django UI).
+    POST: accepts multipart file (field "file"), runs import, returns JSON.
     """
 
     permission_classes = [IsAuthenticated]
@@ -488,6 +528,97 @@ class EmployeeWorkInfoImportView(APIView):
     @manager_permission_required("employee.add_employeeworkinformation")
     def get(self, request):
         return work_info_import(request)
+
+    @method_decorator(permission_required("employee.add_employee"))
+    def post(self, request):
+        file = request.FILES.get("file")
+        if not file:
+            return Response({"error": "No file uploaded."}, status=status.HTTP_400_BAD_REQUEST)
+        ext = (file.name or "").split(".")[-1].lower()
+        try:
+            if ext == "csv":
+                data_frame = pd.read_csv(file)
+            elif ext in ("xls", "xlsx"):
+                data_frame = pd.read_excel(file)
+            else:
+                return Response(
+                    {"error": "Unsupported file format. Please upload a CSV or Excel file."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        except Exception as e:
+            logger.exception("Import file read error")
+            return Response(
+                {"error": f"Failed to read file: {str(e)}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        valid, error_message = valid_import_file_headers(data_frame)
+        if not valid:
+            return Response({"error": error_message or "Invalid file headers."}, status=status.HTTP_400_BAD_REQUEST)
+        success_list, error_list, created_count = process_employee_records(data_frame)
+        if success_list:
+            try:
+                users = bulk_create_user_import(success_list)
+                employees = bulk_create_employee_import(success_list)
+                bulk_create_department_import(success_list)
+                bulk_create_job_position_import(success_list)
+                bulk_create_job_role_import(success_list)
+                bulk_create_work_types(success_list)
+                bulk_create_shifts(success_list)
+                bulk_create_employee_types(success_list)
+                bulk_create_work_info_import(success_list)
+                threading.Thread(target=set_initial_password, args=(employees,)).start()
+            except Exception as e:
+                logger.exception("Import bulk create error")
+                return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        total_count = created_count + len(error_list)
+        message = f"Import complete: {created_count} created, {len(error_list)} errors."
+        return Response({
+            "created_count": created_count,
+            "error_count": len(error_list),
+            "total_count": total_count,
+            "message": message,
+        }, status=status.HTTP_200_OK)
+
+
+class EmployeeWorkInfoImportTemplateView(APIView):
+    """GET: download work info import template (Excel)."""
+
+    permission_classes = [IsAuthenticated]
+
+    @method_decorator(permission_required("employee.add_employee"))
+    def get(self, request):
+        data_frame = pd.DataFrame(
+            columns=[
+                "Badge ID",
+                "First Name",
+                "Last Name",
+                "Email",
+                "Phone",
+                "Gender",
+                "Department",
+                "Job Position",
+                "Job Role",
+                "Shift",
+                "Work Type",
+                "Reporting Manager",
+                "Employee Type",
+                "Location",
+                "Date Joining",
+                "Basic Salary",
+                "Salary Hour",
+                "Contract End Date",
+                "Company",
+            ]
+        )
+        buffer = io.BytesIO()
+        data_frame.to_excel(buffer, index=False)
+        buffer.seek(0)
+        response = HttpResponse(
+            buffer.getvalue(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = 'attachment; filename="work_info_template.xlsx"'
+        return response
 
 
 class EmployeeBulkUpdateView(APIView):
@@ -1148,6 +1279,122 @@ class EmployeeArchiveView(APIView):
                 "error": employee.get_archive_condition(),
             }
         return Response(response, status=200)
+
+
+class EmployeeBulkMailView(APIView):
+    """
+    Send bulk mail to selected employees (matches backend send_mail_to_employee).
+    POST body: { "subject": str, "body": str (HTML), "employee_ids": [id, ...] }
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    @method_decorator(permission_required("employee.change_employee"), name="dispatch")
+    def post(self, request):
+        subject = request.data.get("subject", "").strip()
+        body = request.data.get("body", "").strip()
+        employee_ids = request.data.get("employee_ids") or []
+
+        if not subject:
+            return Response(
+                {"error": "Subject is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not body:
+            return Response(
+                {"error": "Message body is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not employee_ids or not isinstance(employee_ids, list):
+            return Response(
+                {"error": "employee_ids must be a non-empty list of employee IDs"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        results = []
+        errors = []
+        sender_employee = getattr(request.user, "employee_get", None)
+
+        for emp_id in employee_ids:
+            try:
+                employee = Employee.objects.get(id=emp_id)
+            except Employee.DoesNotExist:
+                errors.append({"employee_id": emp_id, "error": "Employee not found"})
+                continue
+
+            send_to_mail = None
+            if getattr(employee, "employee_work_info", None) and getattr(
+                employee.employee_work_info, "email", None
+            ):
+                send_to_mail = employee.employee_work_info.email
+            if not send_to_mail:
+                send_to_mail = getattr(employee, "email", None)
+            if not send_to_mail:
+                errors.append(
+                    {
+                        "employee_id": emp_id,
+                        "employee": str(employee),
+                        "error": "No email set for this employee",
+                    }
+                )
+                continue
+
+            try:
+                template_bdy = Template(body)
+                context = Context(
+                    {
+                        "instance": employee,
+                        "self": sender_employee,
+                        "request": request,
+                    }
+                )
+                render_bdy = template_bdy.render(context)
+            except Exception as e:
+                errors.append(
+                    {
+                        "employee_id": emp_id,
+                        "employee": str(employee),
+                        "error": str(e),
+                    }
+                )
+                continue
+
+            try:
+                email = EmailMessage(
+                    subject=subject,
+                    body=render_bdy,
+                    to=[send_to_mail],
+                )
+                email.content_subtype = "html"
+                email.send()
+                results.append(
+                    {
+                        "employee_id": emp_id,
+                        "employee": str(employee),
+                        "email": send_to_mail,
+                        "sent": True,
+                    }
+                )
+            except Exception as e:
+                errors.append(
+                    {
+                        "employee_id": emp_id,
+                        "employee": str(employee),
+                        "error": str(e),
+                    }
+                )
+
+        return Response(
+            {
+                "success": len(errors) == 0,
+                "sent": len(results),
+                "failed": len(errors),
+                "results": results,
+                "errors": errors,
+                "total": len(employee_ids),
+            },
+            status=200,
+        )
 
 
 class EmployeeSelectorView(APIView):
