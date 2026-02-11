@@ -5,13 +5,20 @@ This module provides utility functions for face recognition operations.
 
 import os
 import tempfile
-import face_recognition
+import logging
+
+try:
+    import face_recognition
+    HAS_FACE_RECOGNITION = True
+except ImportError:
+    face_recognition = None
+    HAS_FACE_RECOGNITION = False
+
 from PIL import Image
 import numpy as np
 from django.conf import settings
 from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +34,8 @@ def encode_face_from_image(image_path):
         - face_encoding: numpy array of face encoding or None
         - success_message: string message indicating success or error
     """
+    if not HAS_FACE_RECOGNITION:
+        return None, "Face recognition library is not installed. Install dlib and face_recognition to use this feature."
     try:
         # Load the image
         image = face_recognition.load_image_file(image_path)
@@ -71,7 +80,9 @@ def compare_faces(reference_encoding, new_image_path, tolerance=0.6):
         'distance': None,
         'tolerance': tolerance
     }
-    
+    if not HAS_FACE_RECOGNITION:
+        result['message'] = "Face recognition library is not installed."
+        return result
     try:
         # Encode face from new image
         new_encoding, encode_message = encode_face_from_image(new_image_path)
@@ -187,6 +198,8 @@ def validate_face_image(image_path, min_face_size=50):
     Returns:
         dict: Validation result with success status and message
     """
+    if not HAS_FACE_RECOGNITION:
+        return {'valid': False, 'message': 'Face recognition library is not installed.'}
     try:
         # Load the image
         image = face_recognition.load_image_file(image_path)

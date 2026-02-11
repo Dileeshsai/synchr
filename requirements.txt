@@ -31,7 +31,7 @@ djangorestframework-simplejwt
 #dlib==19.24.2  # Commented out - use alternative installation method below
 drf-yasg
 et-xmlfile
-face_recognition==1.3.0
+# face_recognition==1.3.0  # Commented out: requires dlib build (fails on Windows). Install via pre-built wheel or conda - see FACE RECOGNITION INSTALLATION INSTRUCTIONS below.
 geopy
 google-api-python-client
 google-cloud-storage==3.0.0
@@ -52,7 +52,7 @@ Pillow==10.0.1
 pycparser
 pyHanko
 pyhanko-certvalidator
-PyMuPDF== 1.24.5
+PyMuPDF==1.24.5
 pypdf
 pypng
 python-bidi

@@ -1,6 +1,9 @@
 import calendar
+import io
+from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 
+import pandas as pd
 from django import template
 from django.apps import apps
 from django.conf import settings
@@ -21,6 +24,8 @@ from attendance.methods.utils import monthly_leave_days
 from attendance.models import (
     Attendance,
     AttendanceActivity,
+    AttendanceOverTime,
+    BatchAttendance,
     AttendanceGeneralSetting,
     AttendanceValidationCondition,
     EmployeeShiftDay,
@@ -42,6 +47,7 @@ from base.methods import (
     get_pagination,
     is_reportingmanager,
 )
+from horilla.horilla_settings import HORILLA_DATE_FORMATS
 from base.models import HorillaMailTemplate
 from employee.filters import EmployeeFilter
 
@@ -381,6 +387,151 @@ class AttendanceView(APIView):
                 return Response({"error:", f"{error}"}, status=400)
 
 
+class AttendanceBulkValidateView(APIView):
+    """
+    Bulk validate attendance records.
+    POST with body: { "ids": [1, 2, 3] }
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    @manager_permission_required("attendance.change_attendance")
+    def post(self, request):
+        from django.db import transaction
+        from notifications.signals import notify
+        from django.urls import reverse
+
+        ids = request.data.get("ids", [])
+        if not ids:
+            return Response(
+                {"detail": "No attendances selected for validation."},
+                status=400,
+            )
+        try:
+            ids = [int(i) for i in ids]
+        except (ValueError, TypeError):
+            return Response({"detail": "Invalid list of IDs provided."}, status=400)
+
+        validate_req_count = 0
+        error_messages = []
+
+        # Get attendances user can see (same permission as list)
+        base_qs = Attendance.objects.filter(employee_id__is_active=True)
+        permission_based = permission_based_queryset(
+            request.user, "attendance.view_attendance", base_qs, user_obj=True
+        )
+        allowed_qs = permission_based.filter(id__in=ids)
+
+        with transaction.atomic():
+            for attendance in allowed_qs:
+                try:
+                    if attendance.is_validate_request:
+                        error_messages.append(
+                            f"Pending attendance update request for {attendance.employee_id}'s attendance on {attendance.attendance_date}!"
+                        )
+                        continue
+
+                    attendance.attendance_validated = True
+                    attendance.save()
+                    validate_req_count += 1
+
+                    # Send notification
+                    try:
+                        notify.send(
+                            request.user.employee_get,
+                            recipient=attendance.employee_id.employee_user_id,
+                            verb=f"Your attendance for the date {attendance.attendance_date} is validated",
+                            verb_ar=f"تم التحقق من حضورك في تاريخ {attendance.attendance_date}",
+                            verb_de=f"Ihre Anwesenheit für das Datum {attendance.attendance_date} wurde bestätigt",
+                            verb_es=f"Se ha validado su asistencia para la fecha {attendance.attendance_date}",
+                            verb_fr=f"Votre présence pour la date {attendance.attendance_date} est validée",
+                            redirect="/employee/employee-profile/",
+                            api_redirect="",
+                            icon="checkmark",
+                        )
+                    except Exception:
+                        pass  # Notification failure shouldn't break validation
+
+                except Exception as e:
+                    error_messages.append(f"Error validating attendance {attendance.id}: {str(e)}")
+
+        response_data = {
+            "validated": validate_req_count,
+            "errors": error_messages,
+        }
+        status_code = 200 if validate_req_count > 0 else 400
+        return Response(response_data, status=status_code)
+
+
+class AttendanceBulkDeleteView(APIView):
+    """
+    Bulk delete attendance records.
+    POST with body: { "ids": [1, 2, 3] }
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    @manager_permission_required("attendance.delete_attendance")
+    def post(self, request):
+        from django.db import transaction
+        from attendance.methods.utils import strtime_seconds, format_time
+
+        ids = request.data.get("ids", [])
+        if not ids:
+            return Response(
+                {"detail": "No attendances selected for deletion."},
+                status=400,
+            )
+        try:
+            ids = [int(i) for i in ids]
+        except (ValueError, TypeError):
+            return Response({"detail": "Invalid list of IDs provided."}, status=400)
+
+        success_count = 0
+        error_messages = []
+
+        # Get attendances user can see (same permission as list)
+        base_qs = Attendance.objects.filter(employee_id__is_active=True)
+        permission_based = permission_based_queryset(
+            request.user, "attendance.view_attendance", base_qs, user_obj=True
+        )
+        deletable_qs = permission_based.filter(id__in=ids)
+
+        employee_ids = deletable_qs.values_list("employee_id", flat=True)
+        overtimes = AttendanceOverTime.objects.filter(
+            employee_id__in=employee_ids
+        ).in_bulk()
+
+        with transaction.atomic():
+            for attendance in deletable_qs:
+                try:
+                    month = attendance.attendance_date.strftime("%B").lower()
+                    overtime = overtimes.get(attendance.employee_id.id)
+
+                    if overtime and attendance.attendance_overtime_approve:
+                        # Calculate the new overtime
+                        total_overtime = strtime_seconds(overtime.overtime)
+                        attendance_overtime_seconds = strtime_seconds(
+                            attendance.attendance_overtime
+                        )
+                        total_overtime = abs(total_overtime - attendance_overtime_seconds)
+                        overtime.overtime = format_time(total_overtime)
+                        overtime.save()
+
+                    attendance.delete()
+                    success_count += 1
+
+                except Exception as e:
+                    error_messages.append(f"Error deleting attendance {attendance.id}: {str(e)}")
+
+        response_data = {
+            "deleted": success_count,
+            "errors": error_messages,
+        }
+        status_code = 200 if success_count > 0 else 400
+        return Response(response_data, status=status_code)
+
+
 class ValidateAttendanceView(APIView):
     """
     Validates an attendance record and sends a notification to the employee.
@@ -635,6 +786,56 @@ class AttendanceRequestCancelView(APIView):
         return Response({"status": "success"}, status=200)
 
 
+class BatchListAPIView(APIView):
+    """
+    Lists attendance batches for dropdowns and batch management.
+
+    Method:
+        get(request): Returns list of batches (id, title).
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        batches = BatchAttendance.objects.all().order_by("-id")
+        data = [{"id": b.id, "title": str(b.title) if b.title else f"Batch-{b.id}"} for b in batches]
+        return Response(data, status=200)
+
+
+class AttendanceRequestAddToBatchAPIView(APIView):
+    """
+    Adds selected attendance request IDs to a batch.
+
+    Method:
+        post(request): Body { ids: [1, 2, 3], batch_attendance_id: 1 }.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    @manager_permission_required("attendance.change_attendance")
+    def post(self, request):
+        ids = request.data.get("ids")
+        batch_id = request.data.get("batch_attendance_id")
+        if not ids or not isinstance(ids, list):
+            return Response({"error": "ids must be a non-empty list"}, status=400)
+        if not batch_id:
+            return Response({"error": "batch_attendance_id is required"}, status=400)
+        batch = BatchAttendance.objects.filter(id=batch_id).first()
+        if not batch:
+            return Response({"error": "Batch not found"}, status=404)
+        updated = 0
+        for pk in ids:
+            try:
+                att = Attendance.objects.filter(id=pk).first()
+                if att:
+                    att.batch_attendance_id = batch
+                    att.save()
+                    updated += 1
+            except Exception:
+                pass
+        return Response({"status": "success", "updated": updated, "batch": str(batch)}, status=200)
+
+
 class AttendanceOverTimeView(APIView):
     """
     Manages CRUD operations for attendance overtime records.
@@ -727,6 +928,10 @@ class LateComeEarlyOutView(APIView):
         queryset = (permission_based | self_reports).distinct().order_by(
             "-attendance_id__attendance_date"
         )
+        field_name = request.GET.get("groupby_field", None)
+        if field_name:
+            url = request.build_absolute_uri()
+            return groupby_queryset(request, url, field_name, queryset)
         pagination = PageNumberPagination()
         pagination.page_size = request.GET.get("page_size") or pagination.page_size
         page = pagination.paginate_queryset(queryset, request)
@@ -739,6 +944,74 @@ class LateComeEarlyOutView(APIView):
         obj = get_object_or_404(AttendanceLateComeEarlyOut, pk=pk)
         obj.delete()
         return Response(status=204)
+
+
+class LateComeEarlyOutExportAPIView(APIView):
+    """
+    Export late come / early out records to Excel. Uses same filters as list view.
+    GET with same params as late-come-early-out-view/ (search, type, employee_id, etc.)
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from django.http import HttpResponse
+
+        base_qs = AttendanceLateComeEarlyOut.objects.all().select_related(
+            "attendance_id", "employee_id"
+        )
+        filter_obj = LateComeEarlyOutFilter(request.GET, queryset=base_qs)
+        queryset = filter_obj.qs
+        self_reports = queryset.filter(employee_id__employee_user_id=request.user)
+        permission_based = filtersubordinates(
+            request, filter_obj.qs, "attendance.view_attendancelatecomeearlyout", field="employee_id"
+        )
+        queryset = (permission_based | self_reports).distinct().order_by(
+            "-attendance_id__attendance_date"
+        )
+
+        from attendance.methods.utils import format_time as format_time_sec
+
+        rows = []
+        for obj in queryset:
+            att = obj.attendance_id
+            emp = obj.employee_id
+            emp_name = ""
+            if emp:
+                f = getattr(emp, "employee_first_name", "") or getattr(emp, "first_name", "")
+                l = getattr(emp, "employee_last_name", "") or getattr(emp, "last_name", "")
+                emp_name = f"{f} {l}".strip() or str(emp)
+            type_label = "Late Come" if obj.type == "late_come" else "Early Out"
+            rows.append({
+                "Employee": emp_name,
+                "Type": type_label,
+                "Attendance Date": att.attendance_date.strftime("%Y-%m-%d") if att and att.attendance_date else "",
+                "Check-In Date": att.attendance_clock_in_date.strftime("%Y-%m-%d") if att and att.attendance_clock_in_date else "",
+                "Check-In": att.attendance_clock_in.strftime("%H:%M") if att and att.attendance_clock_in else "",
+                "Check-Out Date": att.attendance_clock_out_date.strftime("%Y-%m-%d") if att and att.attendance_clock_out_date else "",
+                "Check-Out": att.attendance_clock_out.strftime("%H:%M") if att and att.attendance_clock_out else "",
+                "Minimum Hour": str(att.minimum_hour) if att and att.minimum_hour else "",
+                "At Work": format_time_sec(att.at_work_second) if att and getattr(att, "at_work_second", None) is not None else "",
+            })
+
+        df = pd.DataFrame(rows)
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+            df.to_excel(writer, index=False, sheet_name="Sheet1")
+            worksheet = writer.sheets["Sheet1"]
+            for col_idx, col in enumerate(df.columns):
+                max_len = max(df[col].astype(str).map(len).max() if len(df) > 0 else 0, len(col))
+                worksheet.set_column(col_idx, col_idx, min(max_len + 1, 50))
+
+        output.seek(0)
+        today_str = date.today().strftime("%Y-%m-%d")
+        filename = f"Late_come_early_out_{today_str}.xlsx"
+        response = HttpResponse(
+            output.read(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
 
 
 class ValidationConditionAPIView(APIView):
@@ -882,6 +1155,10 @@ class AttendanceActivityView(APIView):
             request, filter_obj.qs, "attendance.view_attendanceovertime", field="employee_id"
         )
         queryset = (permission_based | self_activities).distinct().order_by("-pk")
+        field_name = request.GET.get("groupby_field", None)
+        if field_name:
+            url = request.build_absolute_uri()
+            return groupby_queryset(request, url, field_name, queryset)
         pagination = PageNumberPagination()
         pagination.page_size = request.GET.get("page_size") or pagination.page_size
         page = pagination.paginate_queryset(queryset, request)
@@ -1104,6 +1381,103 @@ class WorkRecordsListAPIView(APIView):
                 "has_previous": page.has_previous(),
             },
         }, status=200)
+
+
+class WorkRecordExportAPIView(APIView):
+    """
+    Export work records for a month as Excel. Uses JWT auth (same as other API views).
+    Mirrors Django work_record_export logic but returns file for API clients.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            month = int(request.GET.get("month") or date.today().month)
+            year = int(request.GET.get("year") or date.today().year)
+        except (ValueError, TypeError):
+            return Response(
+                {"error": ["Invalid month or year parameter."]},
+                status=400,
+            )
+
+        employee_filter_form = EmployeeFilter(request.GET or None)
+        employees_qs = filtersubordinatesemployeemodel(
+            request,
+            employee_filter_form.qs,
+            "attendance.view_workrecords",
+        )
+        employees = list(employees_qs)
+        if getattr(request.user, "employee_get", None):
+            emp = request.user.employee_get
+            if emp and emp not in employees:
+                employees.insert(0, emp)
+
+        records = WorkRecords.objects.filter(date__month=month, date__year=year)
+        num_days = calendar.monthrange(year, month)[1]
+        all_date_objects = [date(year, month, day) for day in range(1, num_days + 1)]
+        leave_dates = set(monthly_leave_days(month, year))
+
+        record_lookup = defaultdict(lambda: "ABS")
+        for record in records:
+            if record.date <= date.today():
+                record_key = (record.employee_id, record.date)
+                record_lookup[record_key] = record.work_record_type
+
+        date_format = getattr(
+            getattr(request.user, "employee_get", None),
+            "get_date_format",
+            lambda: None,
+        )()
+        format_string = HORILLA_DATE_FORMATS.get(date_format, "%Y-%m-%d")
+        formatted_dates = [day.strftime(format_string) for day in all_date_objects]
+        data_rows = []
+
+        for employee in employees:
+            row_data = {"Employee": str(employee)}
+            for day, formatted_day in zip(all_date_objects, formatted_dates):
+                if day not in leave_dates and day < date.today():
+                    row_data[formatted_day] = record_lookup.get((employee, day), "DFT")
+                else:
+                    data = record_lookup.get((employee, day), "")
+                    row_data[formatted_day] = data if data != "DFT" else ""
+            data_rows.append(row_data)
+
+        columns = ["Employee"] + formatted_dates
+        df = pd.DataFrame(data_rows, columns=columns)
+
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+            df.to_excel(writer, index=False, sheet_name="Sheet1")
+            workbook = writer.book
+            worksheet = writer.sheets["Sheet1"]
+
+            formats = {
+                "ABS": workbook.add_format({"bg_color": "#808080", "font_color": "#ffffff"}),
+                "FDP": workbook.add_format({"bg_color": "#38c338", "font_color": "#ffffff"}),
+                "HDP": workbook.add_format({"bg_color": "#dfdf52", "font_color": "#000000"}),
+                "CONF": workbook.add_format({"bg_color": "#ed4c4c", "font_color": "#ffffff"}),
+                "DFT": workbook.add_format({"bg_color": "#a8b1ff", "font_color": "#ffffff"}),
+            }
+
+            for row_idx, row in enumerate(df.itertuples(index=False), start=1):
+                for col_idx, cell_value in enumerate(row[1:], start=1):
+                    if cell_value in formats:
+                        worksheet.write(row_idx, col_idx, cell_value, formats[cell_value])
+
+            for col_idx, col in enumerate(df.columns):
+                max_len = max(df[col].astype(str).map(len).max(), len(col))
+                worksheet.set_column(col_idx, col_idx, max_len)
+
+        output.seek(0)
+        from django.http import HttpResponse
+
+        response = HttpResponse(
+            output.read(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = 'attachment; filename="work_record_export.xlsx"'
+        return response
 
 
 class OfflineEmployeesCountView(APIView):

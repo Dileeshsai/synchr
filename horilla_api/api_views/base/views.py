@@ -1200,7 +1200,42 @@ class RotatingShiftAssignExport(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        from base.views import rotating_shift_assign_export
+        return rotating_shift_assign_export(request)
+
+
+class RotatingWorkTypeAssignExport(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
         return rotating_work_type_assign_export(request)
+
+
+class RotatingWorkTypeAssignBulkArchive(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def put(self, request, status):
+        ids = request.data.get("ids", None)
+        try:
+            rotating_work_type_assigns = RotatingWorkTypeAssign.objects.filter(id__in=ids)
+            is_active = str(status).lower() == "true"
+            rotating_work_type_assigns.update(is_active=is_active)
+            return Response({"status": "success"}, status=200)
+        except Exception as E:
+            return Response({"error": str(E)}, status=400)
+
+
+class RotatingWorkTypeAssignBulkDelete(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request):
+        ids = request.data.get("ids", None)
+        try:
+            rotating_work_type_assigns = RotatingWorkTypeAssign.objects.filter(id__in=ids)
+            rotating_work_type_assigns.delete()
+            return Response({"status": "success"}, status=200)
+        except Exception as E:
+            return Response({"error": str(E)}, status=400)
 
 
 class RotatingShiftAssignBulkArchive(APIView):

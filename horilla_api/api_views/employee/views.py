@@ -1,5 +1,5 @@
 from django.db.models import ProtectedError, Q
-from django.http import Http404
+from django.http import Http404, HttpResponse, FileResponse
 from django.utils.decorators import method_decorator
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import status
@@ -7,12 +7,33 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+import logging
+import mimetypes
+import pandas as pd
+import threading
 
 
+from base.models import JobPosition
+from base.views import generate_error_report
 from employee.filters import (
     DisciplinaryActionFilter,
     DocumentRequestFilter,
     EmployeeFilter,
+)
+from employee.methods.methods import (
+    bulk_create_department_import,
+    bulk_create_employee_import,
+    bulk_create_employee_types,
+    bulk_create_job_position_import,
+    bulk_create_job_role_import,
+    bulk_create_shifts,
+    bulk_create_user_import,
+    bulk_create_work_info_import,
+    bulk_create_work_types,
+    error_data_template,
+    process_employee_records,
+    set_initial_password,
+    valid_import_file_headers,
 )
 from employee.models import (
     Actiontype,
@@ -23,9 +44,9 @@ from employee.models import (
     EmployeeTag,
     EmployeeWorkInformation,
     Policy,
+    PolicyMultipleFile,
 )
-from base.models import JobPosition
-from employee.views import work_info_export, work_info_import
+from employee.views import work_info_export
 from horilla.decorators import owner_can_enter
 from horilla_api.api_decorators.base.decorators import permission_required
 from horilla_api.api_methods.employee.methods import get_next_badge_id
@@ -53,6 +74,8 @@ from ...api_serializers.employee.serializers import (
     PolicySerializer,
 )
 
+
+logger = logging.getLogger(__name__)
 
 
 def permission_check(request, perm):
@@ -480,14 +503,153 @@ class EmployeeWorkInfoImportView(APIView):
 
     Methods:
         get(request):
-            - Handles the importing of work information data based on user permissions.
+            - Returns the import form HTML (for Django template compatibility).
+        post(request):
+            - Handles file upload and imports employee work information.
     """
 
     permission_classes = [IsAuthenticated]
 
     @manager_permission_required("employee.add_employeeworkinformation")
     def get(self, request):
+        # Keep GET behaviour for compatibility with existing Django template flow.
+        from employee.views import work_info_import  # local import to avoid circulars
+
         return work_info_import(request)
+
+    @manager_permission_required("employee.add_employee")
+    def post(self, request):
+        """
+        Handle employee work info import from an uploaded file and return JSON.
+        Mirrors the logic of employee.views.work_info_import but returns
+        structured API responses instead of HTML.
+        """
+        upload = request.FILES.get("file")
+        if not upload:
+            return Response({"error": "No file uploaded."}, status=status.HTTP_400_BAD_REQUEST)
+
+        file_extension = upload.name.split(".")[-1].lower()
+
+        try:
+            if file_extension == "csv":
+                data_frame = pd.read_csv(upload)
+            elif file_extension in ["xls", "xlsx"]:
+                data_frame = pd.read_excel(upload)
+            else:
+                return Response(
+                    {
+                        "error": "Unsupported file format. "
+                        "Please upload a CSV or Excel file."
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            valid, error_message = valid_import_file_headers(data_frame)
+            if not valid:
+                return Response(
+                    {"error": error_message}, status=status.HTTP_400_BAD_REQUEST
+                )
+
+            success_list, error_list, created_count = process_employee_records(
+                data_frame
+            )
+
+            if success_list:
+                try:
+                    users = bulk_create_user_import(success_list)
+                    employees = bulk_create_employee_import(success_list)
+                    bulk_create_department_import(success_list)
+                    bulk_create_job_position_import(success_list)
+                    bulk_create_job_role_import(success_list)
+                    bulk_create_work_types(success_list)
+                    bulk_create_shifts(success_list)
+                    bulk_create_employee_types(success_list)
+                    bulk_create_work_info_import(success_list)
+
+                    thread = threading.Thread(
+                        target=set_initial_password, args=(employees,)
+                    )
+                    thread.start()
+                except Exception as e:
+                    logger.error("Error during bulk create for import: %s", e)
+
+            path_info = (
+                generate_error_report(
+                    error_list, error_data_template, "EmployeesImportError.xlsx"
+                )
+                if error_list
+                else None
+            )
+
+            total_count = created_count + len(error_list)
+            message = (
+                f"Import complete: {created_count} created, {len(error_list)} errors."
+            )
+
+            return Response(
+                {
+                    "created_count": created_count,
+                    "total_count": total_count,
+                    "error_count": len(error_list),
+                    "model": "Employees",
+                    "error_report": path_info,
+                    "message": message,
+                },
+                status=status.HTTP_200_OK,
+            )
+        except Exception as e:
+            logger.error("File import error: %s", e)
+            return Response(
+                {
+                    "error": (
+                        "Failed to read file. Please ensure it is a valid "
+                        f"CSV or Excel file. : {e}"
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+
+class EmployeeWorkInfoImportTemplateView(APIView):
+    """
+    Endpoint for downloading employee work info import template (Excel).
+
+    Methods:
+        get(request):
+            - Returns an Excel template file with required columns for employee import.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    @manager_permission_required("employee.add_employee")
+    def get(self, request):
+        data_frame = pd.DataFrame(
+            columns=[
+                "Badge ID",
+                "First Name",
+                "Last Name",
+                "Email",
+                "Phone",
+                "Gender",
+                "Department",
+                "Job Position",
+                "Job Role",
+                "Shift",
+                "Work Type",
+                "Reporting Manager",
+                "Employee Type",
+                "Location",
+                "Date Joining",
+                "Basic Salary",
+                "Salary Hour",
+                "Contract End Date",
+                "Company",
+            ]
+        )
+        response = HttpResponse(content_type="application/ms-excel")
+        response["Content-Disposition"] = 'attachment; filename="work_info_template.xlsx"'
+        data_frame.to_excel(response, index=False)
+        return response
 
 
 class EmployeeBulkUpdateView(APIView):
@@ -736,9 +898,51 @@ class PolicyAPIView(APIView):
             serializer = PolicySerializer(page, many=True)
             return paginator.get_paginated_response(serializer.data)
 
+    def _parse_multipart_policy_data(self, request):
+        """Parse multipart form data for policy create/update (matches Django PolicyForm)."""
+        data = request.data
+        files = []
+        if hasattr(request, 'FILES') and request.FILES:
+            files = request.FILES.getlist('attachment') or []
+        company_ids = data.getlist('company_id') if hasattr(data, 'getlist') else (data.get('company_id') or [])
+        if not isinstance(company_ids, list):
+            company_ids = [company_ids] if company_ids else []
+        company_ids = [int(x) for x in company_ids if x is not None and str(x).strip() and str(x).replace('-', '').isdigit()]
+        is_visible_val = data.get('is_visible_to_all', 'true')
+        if isinstance(is_visible_val, bool):
+            is_visible = is_visible_val
+        else:
+            is_visible = str(is_visible_val).lower() in ('true', '1', 'yes')
+        return {
+            'title': data.get('title', ''),
+            'body': data.get('body', ''),
+            'is_visible_to_all': is_visible,
+            'company_id': company_ids,
+            'attachment_files': list(files),
+        }
+
     def post(self, request):
         if permission_check(request, "employee.add_policy") is False:
             return Response({"error": "No permission"}, status=401)
+
+        content_type = getattr(request, 'content_type', '') or ''
+        is_multipart = 'multipart/form-data' in content_type
+        if is_multipart and request.FILES:
+            parsed = self._parse_multipart_policy_data(request)
+            serializer = PolicySerializer(data={
+                'title': parsed['title'],
+                'body': parsed['body'],
+                'is_visible_to_all': parsed['is_visible_to_all'],
+                'company_id': parsed['company_id'] or [],
+            })
+            if serializer.is_valid():
+                policy = serializer.save()
+                for f in parsed['attachment_files']:
+                    pmf = PolicyMultipleFile(attachment=f)
+                    pmf.save()
+                    policy.attachments.add(pmf)
+                return Response(PolicySerializer(policy).data, status=201)
+            return Response(serializer.errors, status=400)
 
         serializer = PolicySerializer(data=request.data)
         if serializer.is_valid():
@@ -750,6 +954,26 @@ class PolicyAPIView(APIView):
         if permission_check(request, "employee.change_policy") is False:
             return Response({"error": "No permission"}, status=401)
         policy = self.get_object(pk)
+
+        content_type = getattr(request, 'content_type', '') or ''
+        is_multipart = 'multipart/form-data' in content_type
+        if is_multipart and (request.FILES or request.POST):
+            parsed = self._parse_multipart_policy_data(request)
+            serializer = PolicySerializer(policy, data={
+                'title': parsed['title'],
+                'body': parsed['body'],
+                'is_visible_to_all': parsed['is_visible_to_all'],
+                'company_id': parsed['company_id'] or [],
+            }, partial=True)
+            if serializer.is_valid():
+                policy = serializer.save()
+                for f in parsed['attachment_files']:
+                    pmf = PolicyMultipleFile(attachment=f)
+                    pmf.save()
+                    policy.attachments.add(pmf)
+                return Response(PolicySerializer(policy).data)
+            return Response(serializer.errors, status=400)
+
         serializer = PolicySerializer(policy, data=request.data)
         if serializer.is_valid():
             serializer.save()
@@ -1002,6 +1226,115 @@ class DocumentAPIView(APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+class DocumentViewAPIView(APIView):
+    """
+    Endpoint for viewing/downloading document files.
+    Serves the document file with proper authentication and permissions.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        """
+        Serve the document file for viewing/downloading.
+        """
+        try:
+            document = Document.objects.get(pk=pk)
+        except Document.DoesNotExist:
+            return Response(
+                {"error": "Document not found"}, status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Check if document has a file
+        if not document.document:
+            return Response(
+                {"error": "Document file not found"}, status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Check permissions - user must be able to view the document
+        # Allow if user is the document owner, manager, or has view permission
+        try:
+            # Check if user has permission to view document requests
+            if not request.user.has_perm("horilla_documents.view_documentrequest"):
+                # Check if user is the document owner
+                if hasattr(request.user, "employee_get"):
+                    employee = request.user.employee_get
+                    if document.employee_id != employee:
+                        return Response(
+                            {"error": "Permission denied"},
+                            status=status.HTTP_403_FORBIDDEN,
+                        )
+                else:
+                    return Response(
+                        {"error": "Permission denied"},
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
+        except Exception:
+            # If permission check fails, allow if user is authenticated
+            pass
+
+        # Serve the file
+        try:
+            # Use Django's file storage abstraction - works with both local and remote storage
+            file_field = document.document
+            
+            # Validate file field has a name
+            if not file_field.name:
+                return Response(
+                    {"error": "Document file name is missing"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            
+            # Get file name for content type detection and filename
+            file_name = file_field.name
+            
+            # Determine content type based on file extension
+            content_type, _ = mimetypes.guess_type(file_name)
+            if not content_type:
+                content_type = "application/octet-stream"
+            
+            # Open file using Django's storage abstraction
+            # This works with both local filesystem and remote storage (S3, etc.)
+            try:
+                file_handle = file_field.open('rb')
+            except Exception as open_error:
+                logger.error(f"Error opening document file: {open_error}", exc_info=True)
+                return Response(
+                    {"error": f"Failed to open document file: {str(open_error)}"},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+            
+            # Create FileResponse
+            # FileResponse will automatically close the file handle when done
+            file_response = FileResponse(file_handle, content_type=content_type)
+            filename = file_name.split("/")[-1] if "/" in file_name else file_name
+            file_response[
+                "Content-Disposition"
+            ] = f'inline; filename="{filename}"'
+            
+            # Set content length if available
+            try:
+                if hasattr(file_field, 'size') and file_field.size:
+                    file_response["Content-Length"] = str(file_field.size)
+            except (AttributeError, NotImplementedError):
+                pass
+            
+            return file_response
+        except FileNotFoundError:
+            return Response(
+                {"error": "Document file not found on server"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        except Exception as e:
+            logger.error(f"Error serving document file: {e}", exc_info=True)
+            import traceback
+            logger.error(traceback.format_exc())
+            return Response(
+                {"error": f"Failed to serve document file: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+
 class DocumentRequestApproveRejectView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -1046,6 +1379,158 @@ class DocumentBulkApproveRejectAPIView(APIView):
       document.status = status
       document.save()
       return Response({"status": "success"}, status=200)
+
+class OrganizationChartAPIView(APIView):
+    """
+    API endpoint for organization chart.
+    Returns the hierarchy structure matching the backend Django view logic exactly.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        """
+        Get organization chart data.
+        Query params:
+        - manager_id: Optional manager ID to view chart from (defaults to current user's employee)
+        - employee_work_info__company_id: Optional company filter
+        """
+        from django.db.models import Exists, OuterRef
+
+        # Get company filter from query params or session
+        company_id = request.GET.get("employee_work_info__company_id")
+        if not company_id:
+            # Try to get from session/context if available
+            company_id = getattr(request, "selected_company", None)
+            if company_id == "all":
+                company_id = None
+
+        # Find employees who ARE reporting managers (have subordinates)
+        if company_id:
+            reporting_managers = Employee.objects.filter(
+                is_active=True,
+                employee_work_info__company_id=company_id,
+            ).annotate(
+                has_subordinates=Exists(
+                    EmployeeWorkInformation.objects.filter(
+                        reporting_manager_id=OuterRef("pk")
+                    )
+                )
+            ).filter(has_subordinates=True).distinct()
+        else:
+            reporting_managers = Employee.objects.filter(
+                is_active=True,
+            ).annotate(
+                has_subordinates=Exists(
+                    EmployeeWorkInformation.objects.filter(
+                        reporting_manager_id=OuterRef("pk")
+                    )
+                )
+            ).filter(has_subordinates=True).distinct()
+
+        # Create dictionary of reporting manager id -> name
+        result_dict = {item.id: item.get_full_name() for item in reporting_managers}
+
+        entered_req_managers = []
+
+        # Helper function to recursively create the hierarchy structure (matches backend exactly)
+        def create_hierarchy(manager):
+            """
+            Hierarchy generator method - matches backend logic exactly
+            """
+            """
+            Hierarchy generator method - matches backend logic exactly
+            """
+            nodes = []
+            # Check if manager is a reporting manager, if yes store it
+            if manager.id in result_dict.keys():
+                entered_req_managers.append(manager)
+
+            # Filter subordinates
+            subordinates = Employee.objects.filter(
+                is_active=True, employee_work_info__reporting_manager_id=manager
+            ).exclude(id=manager.id)
+
+            # Iterate through subordinates
+            for employee in subordinates:
+                if employee in entered_req_managers:
+                    continue
+
+                # Check if employee is a reporting manager
+                if employee.id in result_dict.keys():
+                    nodes.append(
+                        {
+                            "name": employee.get_full_name(),
+                            "title": getattr(
+                                employee.get_job_position(),
+                                "job_position",
+                                "Not set",
+                            ),
+                            "children": create_hierarchy(employee),
+                        }
+                    )
+                    entered_req_managers.append(employee)
+                else:
+                    nodes.append(
+                        {
+                            "name": employee.get_full_name(),
+                            "title": getattr(
+                                employee.get_job_position(),
+                                "job_position",
+                                "Not set",
+                            ),
+                            "className": "middle-level",
+                            "children": create_hierarchy(employee),
+                        }
+                    )
+            return nodes
+
+        # Get manager to display chart from
+        manager_id = request.GET.get("manager_id")
+        if manager_id:
+            try:
+                manager = Employee.objects.get(id=int(manager_id))
+            except (Employee.DoesNotExist, ValueError):
+                return Response(
+                    {"error": "Manager not found"}, status=status.HTTP_404_NOT_FOUND
+                )
+        else:
+            # Default to current user's employee
+            if hasattr(request.user, "employee_get"):
+                manager = request.user.employee_get
+            else:
+                return Response(
+                    {"error": "User has no associated employee"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        # Build reporting manager dropdown options
+        if len(reporting_managers) == 0:
+            reporting_manager_dict = {}
+        else:
+            # Backend adds "My view" for first manager
+            first_manager_id = reporting_managers[0].id
+            reporting_manager_dict = {
+                first_manager_id: "My view",
+                **{item.id: item.get_full_name() for item in reporting_managers},
+            }
+
+        # Build the root node
+        node = {
+            "name": manager.get_full_name(),
+            "title": getattr(manager.get_job_position(), "job_position", "Not set"),
+            "children": create_hierarchy(manager),
+        }
+
+        return Response(
+            {
+                "act_datasource": node,
+                "reporting_manager_dict": reporting_manager_dict,
+                "act_manager_id": manager.id,
+            },
+            status=status.HTTP_200_OK,
+        )
+
 
 class EmployeeBulkArchiveView(APIView):
     permission_classes = [IsAuthenticated]

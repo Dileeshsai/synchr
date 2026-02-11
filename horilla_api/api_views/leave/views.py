@@ -1,9 +1,11 @@
 import contextlib
+from datetime import datetime
 
+import pandas as pd
 from django.contrib.auth.decorators import permission_required
 from django.contrib.auth.models import AnonymousUser
 from django.db.models import Count
-from django.http import Http404, QueryDict
+from django.http import Http404, HttpResponse, QueryDict
 from django.utils.decorators import method_decorator
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.pagination import PageNumberPagination
@@ -11,11 +13,12 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from base.methods import filtersubordinates
+from base.methods import export_data, filtersubordinates
 from horilla_api.api_serializers.leave.serializers import *
 from leave.filters import *
+from leave.forms import AvailableLeaveColumnExportForm
 from leave.methods import filter_conditional_leave_request
-from leave.models import LeaveRequest
+from leave.models import AvailableLeave, LeaveRequest, LeaveType
 from notifications.signals import notify
 
 from ...api_decorators.base.decorators import manager_permission_required
@@ -382,6 +385,154 @@ class AssignLeaveGetCreateAPIView(APIView):
                             )
             return Response(status=201)
         return Response(serializer.errors, status=400)
+
+
+class AssignedLeaveTemplateAPIView(APIView):
+    """
+    API to download the Assigned Leave import Excel template.
+    Mirrors `assign_leave_type_excel` but is JWT-authenticated.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        # Match backend assigned leave template columns
+        columns = [
+            "Employee Badge ID",
+            "Leave Type",
+            "Available Days",
+            "Carryforward Days",
+            "Total Leave Days",
+            "Assigned Date",
+        ]
+        data_frame = pd.DataFrame(columns=columns)
+        response = HttpResponse(content_type="application/ms-excel")
+        response["Content-Disposition"] = (
+            'attachment; filename="assign_leave_type_excel.xlsx"'
+        )
+        data_frame.to_excel(response, index=False)
+        return response
+
+
+class AssignedLeaveImportAPIView(APIView):
+    """
+    API to import Assigned Leave data from an uploaded Excel file.
+    Simplified version of `assign_leave_type_import`, returning JSON summary.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        file = request.FILES.get("file")
+        if not file:
+            return Response(
+                {"detail": "File is required", "field": "file"},
+                status=400,
+            )
+
+        try:
+            data_frame = pd.read_excel(file)
+        except Exception as exc:  # pragma: no cover
+            return Response({"detail": str(exc)}, status=400)
+
+        assign_leave_dicts = data_frame.to_dict("records")
+
+        # Pre-fetch all employees and leave types
+        from employee.models import Employee
+
+        employees = {
+            (emp.badge_id or "").lower(): emp
+            for emp in Employee.objects.all()
+            if emp.badge_id
+        }
+        leave_types = {lt.name.lower(): lt for lt in LeaveType.objects.all()}
+        available_leaves = {
+            (al.leave_type_id_id, al.employee_id_id): al
+            for al in AvailableLeave.objects.all()
+        }
+
+        created = 0
+        errors = []
+        new_instances = []
+
+        for row in assign_leave_dicts:
+            badge_id = str(row.get("Employee Badge ID", "")).strip().lower()
+            leave_type_name = str(row.get("Leave Type", "")).strip().lower()
+            available_days = row.get("Available Days", 0) or 0
+            cfd = row.get("Carry Forward Days", 0) or 0
+
+            row_errors = []
+            employee = employees.get(badge_id)
+            leave_type = leave_types.get(leave_type_name)
+
+            if employee is None:
+                row_errors.append("This badge id does not exist.")
+            if leave_type is None:
+                row_errors.append("This leave type does not exist.")
+
+            if employee and leave_type and (leave_type.id, employee.id) in available_leaves:
+                row_errors.append("Leave type has already been assigned to the employee.")
+
+            if row_errors:
+                errors.append(
+                    {
+                        "row": row,
+                        "errors": row_errors,
+                    }
+                )
+                continue
+
+            if not available_days:
+                available_days = leave_type.total_days
+
+            available_leave = AvailableLeave(
+                leave_type_id=leave_type,
+                employee_id=employee,
+                available_days=available_days,
+            )
+            if cfd:
+                available_leave.carryforward_days = cfd
+                available_leave.expired_date = leave_type.carryforward_expire_date
+                with contextlib.suppress(Exception):
+                    available_leave.reset_date = leave_type.leave_type_next_reset_date()
+                available_leave.assigned_date = datetime.today()
+                available_leave.total_leave_days = (
+                    available_leave.carryforward_days + available_leave.available_days
+                )
+
+            new_instances.append(available_leave)
+
+        if new_instances:
+            AvailableLeave.objects.bulk_create(new_instances)
+            created = len(new_instances)
+
+        return Response(
+            {
+                "created_count": created,
+                "error_count": len(errors),
+                "errors": errors,
+            },
+            status=200,
+        )
+
+
+class AssignedLeaveExportAPIView(APIView):
+    """
+    API to export Assigned Leaves to Excel using AssignedLeaveFilter.
+    Mirrors the non-HTMX branch of `assigned_leaves_export`.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        return export_data(
+            request=request,
+            model=AvailableLeave,
+            filter_class=AssignedLeaveFilter,
+            form_class=AvailableLeaveColumnExportForm,
+            file_name="Assign_Leave",
+            perm="leave.view_availableleave",
+        )
 
 
 class AssignLeaveGetUpdateDeleteAPIView(APIView):

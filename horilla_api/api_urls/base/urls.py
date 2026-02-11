@@ -228,6 +228,21 @@ urlpatterns = [
         name="api-rotating-shift-assigns-bulk-delete",
     ),
     path(
+        "rotating-work-type-assign-export",
+        views.RotatingWorkTypeAssignExport.as_view(),
+        name="api-rotating-work-type-assign-export",
+    ),
+    path(
+        "rotating-work-type-assign-bulk-archive/<str:status>",
+        views.RotatingWorkTypeAssignBulkArchive.as_view(),
+        name="api-rotating-work-type-assign-bulk-archive",
+    ),
+    path(
+        "rotating-work-type-assign-bulk-delete",
+        views.RotatingWorkTypeAssignBulkDelete.as_view(),
+        name="api-rotating-work-type-assign-bulk-delete",
+    ),
+    path(
         "rotating-worktype-create-permission-check/<int:id>",
         views.RotatingWorKTypePermissionCheck.as_view(),
         name="api-rotating-worktype-create-permission-check",

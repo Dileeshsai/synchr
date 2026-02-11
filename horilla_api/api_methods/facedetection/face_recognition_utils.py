@@ -9,7 +9,13 @@ from PIL import Image
 # Suppress pkg_resources deprecation warning from face_recognition_models
 warnings.filterwarnings("ignore", message="pkg_resources is deprecated", category=UserWarning)
 
-import face_recognition
+try:
+    import face_recognition
+    HAS_FACE_RECOGNITION = True
+except ImportError:
+    face_recognition = None
+    HAS_FACE_RECOGNITION = False
+
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.conf import settings
@@ -32,6 +38,8 @@ def encode_face_from_image(image_path):
     Returns:
         tuple: (success, encoding, message)
     """
+    if not HAS_FACE_RECOGNITION:
+        return False, None, "Face recognition library is not installed. Install dlib and face_recognition to use this feature."
     try:
         print(f"🔍 encode_face_from_image: Processing image at {image_path}")
         
@@ -78,6 +86,8 @@ def compare_faces(known_encoding_str, unknown_encoding_str, tolerance=0.6):
     Returns:
         tuple: (match, distance, confidence)
     """
+    if not HAS_FACE_RECOGNITION:
+        return False, 1.0, 0.0
     try:
         # Decode the encodings
         known_encoding = np.frombuffer(base64.b64decode(known_encoding_str), dtype=np.float64)

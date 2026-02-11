@@ -63,6 +63,11 @@ urlpatterns = [
         name="api-employee-work-info-import",
     ),
     path(
+        "employee-work-info-import-template/",
+        views.EmployeeWorkInfoImportTemplateView.as_view(),
+        name="api-employee-work-info-import-template",
+    ),
+    path(
         "employee-bulk-update/",
         views.EmployeeBulkUpdateView.as_view(),
         name="api-employee-bulk-update",
@@ -116,10 +121,20 @@ urlpatterns = [
         name="api-document-detail",
     ),
     path(
+        "documents/<int:pk>/view/",
+        views.DocumentViewAPIView.as_view(),
+        name="api-document-view",
+    ),
+    path(
+        "organization-chart/",
+        views.OrganizationChartAPIView.as_view(),
+        name="api-organization-chart",
+    ),
+    path(
     "employee-bulk-archive/<str:is_active>/",
     views.EmployeeBulkArchiveView.as_view(),
     name="api-employee-bulk-archive",
-   ),
+    ),
     path(
         "employee-archive/<int:id>/<str:is_active>/",
         views.EmployeeArchiveView.as_view(),
