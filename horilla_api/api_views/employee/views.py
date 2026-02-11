@@ -1,5 +1,16 @@
+import io
+import logging
+import threading
+
+import io
+import logging
+import mimetypes
+import pandas as pd
+import threading
 from django.db.models import ProtectedError, Q
 from django.http import Http404, HttpResponse, FileResponse
+from django.template import Context, Template
+from django.core.mail import EmailMessage
 from django.utils.decorators import method_decorator
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import status
@@ -7,10 +18,6 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-import logging
-import mimetypes
-import pandas as pd
-import threading
 
 
 from base.models import JobPosition
@@ -46,7 +53,8 @@ from employee.models import (
     Policy,
     PolicyMultipleFile,
 )
-from employee.views import work_info_export
+from base.methods import filtersubordinatesemployeemodel
+from employee.views import work_info_export, work_info_import
 from horilla.decorators import owner_can_enter
 from horilla_api.api_decorators.base.decorators import permission_required
 from horilla_api.api_methods.employee.methods import get_next_badge_id
@@ -245,10 +253,27 @@ class EmployeeAPIView(APIView):
             serializer = EmployeeSerializer(employee)
             return Response(serializer.data)
         paginator = PageNumberPagination()
-        employees_queryset = Employee.objects.all()
+        # Apply is_active first (mirror Django UI): "False" = archived only, "True" = active only, missing = active only
+        is_active_param = request.GET.get("is_active")
+        if is_active_param is not None:
+            is_active_lower = str(is_active_param).strip().lower()
+            if is_active_lower == "false":
+                employees_queryset = Employee.objects.filter(is_active=False)
+            elif is_active_lower == "true":
+                employees_queryset = Employee.objects.filter(is_active=True)
+            else:
+                employees_queryset = Employee.objects.all()
+        else:
+            employees_queryset = Employee.objects.filter(is_active=True)
         employees_filter_queryset = self.filterset_class(
             request.GET, queryset=employees_queryset
         ).qs
+        if is_active_param is None:
+            employees_filter_queryset = employees_filter_queryset.filter(is_active=True)
+        # Align with backend UI: restrict to employees the user can see (permission/subordinates)
+        employees_filter_queryset = filtersubordinatesemployeemodel(
+            request, employees_filter_queryset, "employee.view_employee"
+        )
         field_name = request.GET.get("groupby_field", None)
         if field_name:
             url = request.build_absolute_uri()
@@ -497,15 +522,14 @@ class EmployeeWorkInfoExportView(APIView):
         return work_info_export(request)
 
 
+logger = logging.getLogger(__name__)
+
+
 class EmployeeWorkInfoImportView(APIView):
     """
     Endpoint for importing employee work information.
-
-    Methods:
-        get(request):
-            - Returns the import form HTML (for Django template compatibility).
-        post(request):
-            - Handles file upload and imports employee work information.
+    GET: returns HTML import page (Django UI).
+    POST: accepts multipart file (field "file"), runs import, returns JSON.
     """
 
     permission_classes = [IsAuthenticated]
@@ -517,6 +541,7 @@ class EmployeeWorkInfoImportView(APIView):
 
         return work_info_import(request)
 
+<<<<<<< HEAD
     @manager_permission_required("employee.add_employee")
     def post(self, request):
         """
@@ -646,9 +671,14 @@ class EmployeeWorkInfoImportTemplateView(APIView):
                 "Company",
             ]
         )
-        response = HttpResponse(content_type="application/ms-excel")
+        buffer = io.BytesIO()
+        data_frame.to_excel(buffer, index=False)
+        buffer.seek(0)
+        response = HttpResponse(
+            buffer.getvalue(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
         response["Content-Disposition"] = 'attachment; filename="work_info_template.xlsx"'
-        data_frame.to_excel(response, index=False)
         return response
 
 
@@ -1633,6 +1663,122 @@ class EmployeeArchiveView(APIView):
                 "error": employee.get_archive_condition(),
             }
         return Response(response, status=200)
+
+
+class EmployeeBulkMailView(APIView):
+    """
+    Send bulk mail to selected employees (matches backend send_mail_to_employee).
+    POST body: { "subject": str, "body": str (HTML), "employee_ids": [id, ...] }
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    @method_decorator(permission_required("employee.change_employee"), name="dispatch")
+    def post(self, request):
+        subject = request.data.get("subject", "").strip()
+        body = request.data.get("body", "").strip()
+        employee_ids = request.data.get("employee_ids") or []
+
+        if not subject:
+            return Response(
+                {"error": "Subject is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not body:
+            return Response(
+                {"error": "Message body is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not employee_ids or not isinstance(employee_ids, list):
+            return Response(
+                {"error": "employee_ids must be a non-empty list of employee IDs"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        results = []
+        errors = []
+        sender_employee = getattr(request.user, "employee_get", None)
+
+        for emp_id in employee_ids:
+            try:
+                employee = Employee.objects.get(id=emp_id)
+            except Employee.DoesNotExist:
+                errors.append({"employee_id": emp_id, "error": "Employee not found"})
+                continue
+
+            send_to_mail = None
+            if getattr(employee, "employee_work_info", None) and getattr(
+                employee.employee_work_info, "email", None
+            ):
+                send_to_mail = employee.employee_work_info.email
+            if not send_to_mail:
+                send_to_mail = getattr(employee, "email", None)
+            if not send_to_mail:
+                errors.append(
+                    {
+                        "employee_id": emp_id,
+                        "employee": str(employee),
+                        "error": "No email set for this employee",
+                    }
+                )
+                continue
+
+            try:
+                template_bdy = Template(body)
+                context = Context(
+                    {
+                        "instance": employee,
+                        "self": sender_employee,
+                        "request": request,
+                    }
+                )
+                render_bdy = template_bdy.render(context)
+            except Exception as e:
+                errors.append(
+                    {
+                        "employee_id": emp_id,
+                        "employee": str(employee),
+                        "error": str(e),
+                    }
+                )
+                continue
+
+            try:
+                email = EmailMessage(
+                    subject=subject,
+                    body=render_bdy,
+                    to=[send_to_mail],
+                )
+                email.content_subtype = "html"
+                email.send()
+                results.append(
+                    {
+                        "employee_id": emp_id,
+                        "employee": str(employee),
+                        "email": send_to_mail,
+                        "sent": True,
+                    }
+                )
+            except Exception as e:
+                errors.append(
+                    {
+                        "employee_id": emp_id,
+                        "employee": str(employee),
+                        "error": str(e),
+                    }
+                )
+
+        return Response(
+            {
+                "success": len(errors) == 0,
+                "sent": len(results),
+                "failed": len(errors),
+                "results": results,
+                "errors": errors,
+                "total": len(employee_ids),
+            },
+            status=200,
+        )
 
 
 class EmployeeSelectorView(APIView):

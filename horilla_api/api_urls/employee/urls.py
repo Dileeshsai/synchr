@@ -141,6 +141,11 @@ urlpatterns = [
         name="api-employee-archive",
     ),
     path(
+        "employee-bulk-mail/",
+        views.EmployeeBulkMailView.as_view(),
+        name="api-employee-bulk-mail",
+    ),
+    path(
         "employee-selector/",
         views.EmployeeSelectorView.as_view(),
         name="api-employee-selector",

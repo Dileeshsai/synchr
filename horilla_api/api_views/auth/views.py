@@ -1,4 +1,5 @@
 from django.contrib.auth import authenticate, get_user_model
+from django.contrib.auth.models import Group, Permission
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes, force_str
@@ -181,3 +182,23 @@ class UserProfileAPIView(APIView):
             
         serializer = GetEmployeeSerializer(employee)
         return Response(serializer.data)
+
+
+class GroupsListView(APIView):
+    """List Django auth Groups for employee filter (employee_user_id__groups)."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        groups = Group.objects.all().order_by('name')
+        data = [{"id": g.id, "name": g.name} for g in groups]
+        return Response(data)
+
+
+class PermissionsListView(APIView):
+    """List Django auth Permissions for employee filter (employee_user_id__user_permissions)."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        perms = Permission.objects.all().select_related('content_type').order_by('content_type__app_label', 'codename')
+        data = [{"id": p.id, "codename": p.codename, "name": p.name or p.codename} for p in perms]
+        return Response(data)
