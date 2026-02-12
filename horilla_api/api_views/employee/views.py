@@ -541,7 +541,6 @@ class EmployeeWorkInfoImportView(APIView):
 
         return work_info_import(request)
 
-<<<<<<< HEAD
     @manager_permission_required("employee.add_employee")
     def post(self, request):
         """

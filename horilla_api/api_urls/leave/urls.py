@@ -11,6 +11,15 @@ urlpatterns = [
     path("available-leave/", EmployeeAvailableLeaveGetAPIView.as_view()),
     path("user-request/", EmployeeLeaveRequestGetCreateAPIView.as_view()),
     path("user-request/<int:pk>/", EmployeeLeaveRequestUpdateDeleteAPIView.as_view()),
+    path("user-request/<int:pk>/comments/", UserLeaveRequestCommentsAPIView.as_view()),
+    path(
+        "user-request/<int:pk>/comments/<int:comment_id>/files/",
+        UserLeaveRequestCommentFilesAPIView.as_view(),
+    ),
+    path(
+        "user-request/<int:pk>/comments/<int:comment_id>/",
+        UserLeaveRequestCommentDeleteAPIView.as_view(),
+    ),
     path("leave-types/", LeaveTypeGetCreateAPIView.as_view(),name="leave-type-list"),
     path("leave-types/<int:pk>/", LeaveTypeGetUpdateDeleteAPIView.as_view(),name="leave-type-list"),
     path("allocation-request/", LeaveAllocationRequestGetCreateAPIView.as_view()),
@@ -31,6 +40,7 @@ urlpatterns = [
     path("holiday/<int:pk>/", HolidayGetUpdateDeleteAPIView.as_view()),
     path("approve/<int:pk>/", LeaveRequestApproveAPIView.as_view(),name="leave-approve"),
     path("reject/<int:pk>/", LeaveRequestRejectAPIView.as_view(),name="leave-reject"),
+    path("interview-conflicts/", InterviewConflictsAPIView.as_view()),
     path("cancel/<int:pk>/", LeaveRequestCancelAPIView.as_view()),
     path("allocation-approve/<int:pk>/", LeaveAllocationApproveAPIView.as_view()),
     path("allocation-reject/<int:pk>/", LeaveAllocationRequestRejectAPIView.as_view()),

@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from django.apps import apps
 from employee.models import Employee
 from leave.methods import calculate_requested_days
 from leave.models import *
@@ -144,6 +145,8 @@ class GetAvailableLeaveTypeSerializer(serializers.ModelSerializer):
 
 class userLeaveRequestGetAllSerilaizer(serializers.ModelSerializer):
     leave_type_id = serializers.SerializerMethodField()
+    has_interview_conflict = serializers.SerializerMethodField()
+    multiple_approvals = serializers.SerializerMethodField()
 
     class Meta:
         model = LeaveRequest
@@ -164,6 +167,58 @@ class userLeaveRequestGetAllSerilaizer(serializers.ModelSerializer):
             return LeaveTypeAllGetSerializer(obj.leave_type_id).data
         return None
 
+    def get_has_interview_conflict(self, obj):
+        """
+        Django UI computes `leave_requests_with_interview` and shows a warning icon.
+        Expose the same signal to the React UI.
+        """
+        if not apps.is_installed("recruitment"):
+            return False
+        try:
+            from horilla.methods import get_horilla_model_class
+
+            InterviewSchedule = get_horilla_model_class(
+                app_label="recruitment", model="interviewschedule"
+            )
+            return InterviewSchedule.objects.filter(
+                employee_id=obj.employee_id,
+                interview_date__range=[obj.start_date, obj.end_date],
+            ).exists()
+        except Exception:
+            return False
+
+    def get_multiple_approvals(self, obj):
+        """
+        Django UI shows a multiple-approval progress badge when available.
+        Return the model's computed structure if present.
+        """
+        try:
+            fn = getattr(obj, "multiple_approvals", None)
+            if not fn or not callable(fn):
+                return None
+            ma = fn()
+            if not ma:
+                return None
+
+            managers = ma.get("managers") or []
+            approved_qs = ma.get("approved")
+
+            # Ensure JSON-serializable payload (no QuerySets / model instances).
+            manager_names = [str(m) for m in managers]
+            approved_count = (
+                approved_qs.count()
+                if hasattr(approved_qs, "count")
+                else (len(approved_qs) if approved_qs is not None else 0)
+            )
+
+            return {
+                "managers": manager_names,
+                "managers_count": len(manager_names),
+                "approved_count": int(approved_count),
+            }
+        except Exception:
+            return None
+
 
 class UserLeaveRequestGetSerilaizer(serializers.ModelSerializer):
     leave_type_id = serializers.SerializerMethodField()
@@ -175,8 +230,6 @@ class UserLeaveRequestGetSerilaizer(serializers.ModelSerializer):
             "approved_available_days",
             "approved_carryforward_days",
             "created_at",
-            "reject_reason",
-            "employee_id",
             "created_by",
         ]
 
@@ -184,6 +237,43 @@ class UserLeaveRequestGetSerilaizer(serializers.ModelSerializer):
         if obj.leave_type_id:
             return LeaveTypeAllGetSerializer(obj.leave_type_id).data
         return None
+
+
+class LeaverequestFileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = LeaverequestFile
+        fields = ["id", "file"]
+
+
+class LeaverequestCommentSerializer(serializers.ModelSerializer):
+    employee = serializers.SerializerMethodField()
+    files = LeaverequestFileSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = LeaverequestComment
+        fields = ["id", "comment", "created_at", "employee", "files"]
+
+    def get_employee(self, obj):
+        emp = getattr(obj, "employee_id", None)
+        if not emp:
+            return None
+        avatar = getattr(emp, "get_avatar", None)
+        if callable(avatar):
+            try:
+                avatar = avatar()
+            except Exception:
+                avatar = None
+        return {
+            "id": emp.id,
+            "full_name": getattr(emp, "full_name", None),
+            "avatar": avatar,
+        }
+
+
+class LeaverequestCommentCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = LeaverequestComment
+        fields = ["comment"]
 
 
 class LeaveRequestCreateUpdateSerializer(serializers.ModelSerializer):

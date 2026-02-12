@@ -2,6 +2,7 @@ import contextlib
 from datetime import datetime
 
 import pandas as pd
+from django.apps import apps
 from django.contrib.auth.decorators import permission_required
 from django.contrib.auth.models import AnonymousUser
 from django.db.models import Count
@@ -13,12 +14,12 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from base.methods import export_data, filtersubordinates
+from base.methods import export_data, filtersubordinates, is_reportingmanager
 from horilla_api.api_serializers.leave.serializers import *
 from leave.filters import *
 from leave.forms import AvailableLeaveColumnExportForm
 from leave.methods import filter_conditional_leave_request
-from leave.models import AvailableLeave, LeaveRequest, LeaveType
+from leave.models import AvailableLeave, LeaveRequest, LeaveType, LeaverequestComment, LeaverequestFile
 from notifications.signals import notify
 
 from ...api_decorators.base.decorators import manager_permission_required
@@ -947,6 +948,160 @@ class LeaveRequestRejectAPIView(APIView):
         raise serializers.ValidationError("Nothing to reject.")
 
 
+class InterviewConflictsAPIView(APIView):
+    """
+    Backend UI (Django template) checks interview conflicts before saving.
+    SPA parity: expose the same check as JSON.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if not apps.is_installed("recruitment"):
+            return Response({"results": []}, status=200)
+
+        start = request.GET.get("start_date")
+        end = request.GET.get("end_date")
+        if not start or not end:
+            raise serializers.ValidationError(
+                {"detail": "start_date and end_date are required."}
+            )
+        try:
+            start_date = datetime.strptime(start, "%Y-%m-%d").date()
+            end_date = datetime.strptime(end, "%Y-%m-%d").date()
+        except Exception:
+            raise serializers.ValidationError({"detail": "Invalid date format. Use YYYY-MM-DD."})
+
+        try:
+            from horilla.methods import get_horilla_model_class
+
+            InterviewSchedule = get_horilla_model_class(
+                app_label="recruitment", model="interviewschedule"
+            )
+            qs = InterviewSchedule.objects.filter(
+                employee_id=request.user.employee_get,
+                interview_date__range=[start_date, end_date],
+            )
+            # Keep response lightweight (UI only needs a list to display)
+            results = list(
+                qs.values(
+                    "id",
+                    "interview_date",
+                    "interview_time",
+                    "candidate_id",
+                )
+            )
+            return Response({"results": results}, status=200)
+        except Exception:
+            return Response({"results": []}, status=200)
+
+
+class UserLeaveRequestCommentsAPIView(APIView):
+    """
+    React parity for leave activity sidebar (comments + files).
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def _get_leave_request(self, pk):
+        try:
+            return LeaveRequest.objects.get(pk=pk)
+        except LeaveRequest.DoesNotExist as e:
+            raise serializers.ValidationError(str(e))
+
+    def _has_access(self, request, leave_request):
+        return (
+            request.user.employee_get == leave_request.employee_id
+            or request.user.has_perm("leave.view_leaverequestcomment")
+            or is_reportingmanager(request)
+        )
+
+    def get(self, request, pk):
+        leave_request = self._get_leave_request(pk)
+        if not self._has_access(request, leave_request):
+            raise serializers.ValidationError("Access Denied.")
+        comments = (
+            LeaverequestComment.objects.filter(request_id=leave_request.id)
+            .order_by("-created_at")
+        )
+        return Response(
+            {"results": LeaverequestCommentSerializer(comments, many=True).data},
+            status=200,
+        )
+
+    def post(self, request, pk):
+        leave_request = self._get_leave_request(pk)
+        if not (
+            request.user.employee_get == leave_request.employee_id
+            or request.user.has_perm("leave.add_leaverequestcomment")
+            or is_reportingmanager(request)
+        ):
+            raise serializers.ValidationError("Access Denied.")
+
+        serializer = LeaverequestCommentCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        comment = LeaverequestComment()
+        comment.request_id = leave_request
+        comment.employee_id = request.user.employee_get
+        comment.comment = serializer.validated_data.get("comment")
+        comment.save()
+
+        # Attach files if provided as multipart: files[]
+        files = request.FILES.getlist("files") if request.FILES else []
+        if files:
+            attachments = []
+            for f in files:
+                file_instance = LeaverequestFile()
+                file_instance.file = f
+                file_instance.save()
+                attachments.append(file_instance)
+            comment.files.add(*attachments)
+
+        return Response(LeaverequestCommentSerializer(comment).data, status=201)
+
+
+class UserLeaveRequestCommentFilesAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk, comment_id):
+        leave_request = LeaveRequest.objects.get(pk=pk)
+        comment = LeaverequestComment.objects.get(pk=comment_id, request_id=leave_request)
+        if not (
+            request.user.employee_get == comment.employee_id
+            or request.user.has_perm("leave.add_leaverequestcomment")
+            or is_reportingmanager(request)
+        ):
+            raise serializers.ValidationError("Access Denied.")
+
+        files = request.FILES.getlist("files") if request.FILES else []
+        if not files:
+            raise serializers.ValidationError({"detail": "No files provided."})
+        attachments = []
+        for f in files:
+            file_instance = LeaverequestFile()
+            file_instance.file = f
+            file_instance.save()
+            attachments.append(file_instance)
+        comment.files.add(*attachments)
+        return Response(LeaverequestCommentSerializer(comment).data, status=200)
+
+
+class UserLeaveRequestCommentDeleteAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, pk, comment_id):
+        leave_request = LeaveRequest.objects.get(pk=pk)
+        comment = LeaverequestComment.objects.get(pk=comment_id, request_id=leave_request)
+        if not (
+            request.user.employee_get == comment.employee_id
+            or request.user.has_perm("leave.delete_leaverequestcomment")
+            or is_reportingmanager(request)
+        ):
+            raise serializers.ValidationError("Access Denied.")
+        comment.delete()
+        return Response(status=204)
+
+
 class LeaveRequestCancelAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -962,10 +1117,17 @@ class LeaveRequestCancelAPIView(APIView):
             leave_request.employee_id == request.user.employee_get
             and leave_request.status == "approved"
         ):
-            start_date = leave_request.start_date
+            end_date = leave_request.end_date
             curr_date = datetime.now().date()
-            if start_date >= curr_date:
+            reason = (
+                request.data.get("reason")
+                or request.data.get("reject_reason")
+                or request.data.get("cancellation_reason")
+            )
+            if end_date >= curr_date:
                 leave_request.status = "cancelled"
+                if reason:
+                    leave_request.reject_reason = reason
                 leave_request.save()
                 return Response(status=200)
             raise serializers.ValidationError("Nothing to cancel.")
