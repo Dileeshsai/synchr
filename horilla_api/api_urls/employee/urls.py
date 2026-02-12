@@ -5,6 +5,16 @@ from ...api_views.employee import views as views
 
 urlpatterns = [
     path("employees/", views.EmployeeAPIView.as_view(), name="api-employees-list"),
+    path(
+        "employee-export-meta/",
+        views.EmployeeExportMetaView.as_view(),
+        name="api-employee-export-meta",
+    ),
+    path(
+        "employees/<int:pk>/send-password-reset/",
+        views.EmployeeSendPasswordResetView.as_view(),
+        name="api-employee-send-password-reset",
+    ),
     path("employees/<int:pk>/", views.EmployeeAPIView.as_view(), name="api-employee-detail"),
     path(
         "employees/<int:pk>/",
@@ -103,6 +113,21 @@ urlpatterns = [
         "document-request/<int:pk>/",
         views.DocumentRequestAPIView.as_view(),
         name="api-document-request-detail",
+    ),
+    path(
+        "document-requests-meta/",
+        views.DocumentRequestsMetaView.as_view(),
+        name="api-document-requests-meta",
+    ),
+    path(
+        "document-requests-grouped/",
+        views.DocumentRequestsGroupedView.as_view(),
+        name="api-document-requests-grouped",
+    ),
+    path(
+        "employee-documents-meta/",
+        views.EmployeeDocumentsMetaView.as_view(),
+        name="api-employee-documents-meta",
     ),
     path(
         "document-bulk-approve-reject/",

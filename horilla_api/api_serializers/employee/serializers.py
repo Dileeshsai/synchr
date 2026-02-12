@@ -176,9 +176,45 @@ class DocumentRequestSerializer(serializers.ModelSerializer):
 
 
 class DocumentSerializer(serializers.ModelSerializer):
+    employee_name = serializers.SerializerMethodField()
+    document_request_title = serializers.SerializerMethodField()
+    document_request_description = serializers.SerializerMethodField()
+    document_request_format = serializers.SerializerMethodField()
+    document_request_max_size = serializers.SerializerMethodField()
+
     class Meta:
         model = Document
         fields = "__all__"
+
+    def get_employee_name(self, obj):
+        try:
+            return obj.employee_id.get_full_name()
+        except Exception:
+            return ""
+
+    def get_document_request_title(self, obj):
+        try:
+            return obj.document_request_id.title if obj.document_request_id else ""
+        except Exception:
+            return ""
+
+    def get_document_request_description(self, obj):
+        try:
+            return obj.document_request_id.description or "" if obj.document_request_id else ""
+        except Exception:
+            return ""
+
+    def get_document_request_format(self, obj):
+        try:
+            return obj.document_request_id.format if obj.document_request_id else None
+        except Exception:
+            return None
+
+    def get_document_request_max_size(self, obj):
+        try:
+            return obj.document_request_id.max_size if obj.document_request_id else None
+        except Exception:
+            return None
 
 
 class EmployeeSelectorSerializer(serializers.ModelSerializer):

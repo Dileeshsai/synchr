@@ -91,6 +91,7 @@ class ForgotPasswordAPIView(APIView):
             email = serializer.validated_data['email']
             # Filter users by email
             users = User.objects.filter(email=email)
+            user = None
             if users.exists():
                 # Prioritize user where username matches email
                 user = users.filter(username=email).first()

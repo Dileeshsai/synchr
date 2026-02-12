@@ -7,10 +7,15 @@ import logging
 import mimetypes
 import pandas as pd
 import threading
-from django.db.models import ProtectedError, Q
+from django.conf import settings
+from django.contrib.auth import get_user_model
+from django.contrib.auth.tokens import PasswordResetTokenGenerator
+from django.core.mail import EmailMessage, send_mail
+from django.db.models import Count, ProtectedError, Q
 from django.http import Http404, HttpResponse, FileResponse
 from django.template import Context, Template
-from django.core.mail import EmailMessage
+from django.utils.encoding import force_bytes
+from django.utils.http import urlsafe_base64_encode
 from django.utils.decorators import method_decorator
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import status
@@ -54,6 +59,7 @@ from employee.models import (
     PolicyMultipleFile,
 )
 from base.methods import filtersubordinatesemployeemodel
+from base.methods import filtersubordinates
 from employee.views import work_info_export, work_info_import
 from horilla.decorators import owner_can_enter
 from horilla_api.api_decorators.base.decorators import permission_required
@@ -84,6 +90,8 @@ from ...api_serializers.employee.serializers import (
 
 
 logger = logging.getLogger(__name__)
+User = get_user_model()
+_password_reset_token_generator = PasswordResetTokenGenerator()
 
 
 def permission_check(request, perm):
@@ -96,6 +104,462 @@ def object_check(cls, pk):
         return obj
     except cls.DoesNotExist:
         return None
+
+
+class EmployeeExportMetaView(APIView):
+    """
+    Provide metadata needed to render the "Export Employees" modal (Django UI equivalent):
+    - Excel columns list (value + label)
+    - Default selected fields
+    - Filter options for Employee + Work Info sections
+
+    This is intentionally backend-driven so the frontend does not hardcode column lists/defaults.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        # Source-of-truth from backend forms (same as Django employee_export_filter.html)
+        from employee.forms import excel_columns, EmployeeExportExcelForm
+        from base.models import Company, Department, WorkType, EmployeeShift
+
+        form = EmployeeExportExcelForm()
+        default_selected_fields = list(form.fields["selected_fields"].initial or [])
+
+        # Restrict employee-derived options to employees the user can see (same as export queryset)
+        allowed_employees = Employee.objects.all()
+        allowed_employees = filtersubordinatesemployeemodel(
+            request, allowed_employees, "employee.view_employee"
+        )
+
+        # Distinct countries from allowed employees (EmployeeFilter uses CharFilter, so this is best-effort)
+        countries = (
+            allowed_employees.exclude(country__isnull=True)
+            .exclude(country__exact="")
+            .values_list("country", flat=True)
+            .distinct()
+            .order_by("country")
+        )
+
+        # Gender choices from model
+        genders = [{"value": c[0], "label": str(c[1])} for c in (Employee.choice_gender or [])]
+
+        companies = Company.objects.all().only("id", "company").order_by("company")
+        departments = Department.objects.all().only("id", "department").order_by("department")
+        shifts = EmployeeShift.objects.all().only("id", "employee_shift").order_by("employee_shift")
+        work_types = WorkType.objects.all().only("id", "work_type").order_by("work_type")
+        job_positions = JobPosition.objects.all().only("id", "job_position").order_by("job_position")
+
+        reporting_manager_options = [
+            {
+                "value": str(e.id),
+                "label": f"{e.get_full_name()} ({e.badge_id})" if getattr(e, "badge_id", None) else e.get_full_name(),
+            }
+            for e in allowed_employees.only("id", "badge_id", "employee_first_name", "employee_last_name")
+            .order_by("employee_first_name", "employee_last_name")
+        ]
+
+        return Response(
+            {
+                "excel_columns": [{"value": v, "label": str(k)} for v, k in excel_columns],
+                "default_selected_fields": default_selected_fields,
+                "filters": {
+                    "employee": [
+                        {
+                            "key": "country",
+                            "label": "Country",
+                            "type": "select",
+                            "options": [{"value": str(c), "label": str(c)} for c in countries],
+                        },
+                        {
+                            "key": "gender",
+                            "label": "Gender",
+                            "type": "select",
+                            "options": [{"value": "", "label": "Select"}] + genders,
+                        },
+                    ],
+                    "work_info": [
+                        {
+                            "key": "employee_work_info__company_id",
+                            "label": "Company",
+                            "type": "select",
+                            "options": [{"value": str(c.id), "label": str(c.company)} for c in companies],
+                        },
+                        {
+                            "key": "employee_work_info__department_id",
+                            "label": "Department",
+                            "type": "select",
+                            "options": [{"value": str(d.id), "label": str(d.department)} for d in departments],
+                        },
+                        {
+                            "key": "employee_work_info__shift_id",
+                            "label": "Shift",
+                            "type": "select",
+                            "options": [{"value": str(s.id), "label": str(s.employee_shift)} for s in shifts],
+                        },
+                        {
+                            "key": "employee_work_info__reporting_manager_id",
+                            "label": "Reporting Manager",
+                            "type": "select",
+                            "options": reporting_manager_options,
+                        },
+                        {
+                            "key": "employee_work_info__job_position_id",
+                            "label": "Job Position",
+                            "type": "select",
+                            "options": [{"value": str(p.id), "label": str(p.job_position)} for p in job_positions],
+                        },
+                        {
+                            "key": "employee_work_info__work_type_id",
+                            "label": "Work Type",
+                            "type": "select",
+                            "options": [{"value": str(w.id), "label": str(w.work_type)} for w in work_types],
+                        },
+                    ],
+                },
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class DocumentRequestsMetaView(APIView):
+    """
+    Backend-driven metadata for Employee > Document Requests page.
+    Mirrors Django UI (document_nav.html) filter sections and actions without frontend hardcoding.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from base.models import Company, Department, EmployeeShift, JobPosition, WorkType
+        from employee.models import EmployeeWorkInformation
+        from horilla_documents.models import Document as DocumentModel
+
+        # Employees visible to user (for employee filter dropdown + reporting manager dropdown)
+        allowed_employees = Employee.objects.all()
+        allowed_employees = filtersubordinatesemployeemodel(
+            request, allowed_employees, "employee.view_employee"
+        )
+
+        employee_options = [
+            {
+                "value": str(e.id),
+                "label": f"{e.get_full_name()} ({e.badge_id})" if getattr(e, "badge_id", None) else e.get_full_name(),
+            }
+            for e in allowed_employees.only(
+                "id", "badge_id", "employee_first_name", "employee_last_name"
+            ).order_by("employee_first_name", "employee_last_name")
+        ]
+
+        # Reporting managers list: employees who are referenced as reporting_manager_id
+        reporting_manager_ids = (
+            EmployeeWorkInformation.objects.exclude(reporting_manager_id__isnull=True)
+            .values_list("reporting_manager_id", flat=True)
+            .distinct()
+        )
+        reporting_managers = (
+            Employee.objects.filter(id__in=reporting_manager_ids)
+            .only("id", "badge_id", "employee_first_name", "employee_last_name")
+            .order_by("employee_first_name", "employee_last_name")
+        )
+        reporting_manager_options = [
+            {
+                "value": str(e.id),
+                "label": f"{e.get_full_name()} ({e.badge_id})" if getattr(e, "badge_id", None) else e.get_full_name(),
+            }
+            for e in reporting_managers
+        ]
+
+        departments = Department.objects.all().only("id", "department").order_by("department")
+        job_positions = JobPosition.objects.all().only("id", "job_position").order_by("job_position")
+        shifts = EmployeeShift.objects.all().only("id", "employee_shift").order_by("employee_shift")
+        work_types = WorkType.objects.all().only("id", "work_type").order_by("work_type")
+        companies = Company.objects.all().only("id", "company").order_by("company")
+
+        # Job roles are tied to job positions in this system; serve all for dropdown
+        try:
+            from base.models import JobRole
+
+            job_roles = JobRole.objects.all().only("id", "job_role").order_by("job_role")
+            job_role_options = [{"value": str(j.id), "label": str(j.job_role)} for j in job_roles]
+        except Exception:
+            job_role_options = []
+
+        gender_choices = [{"value": c[0], "label": str(c[1])} for c in (Employee.choice_gender or [])]
+        status_choices = [{"value": c[0], "label": str(c[1])} for c in (DocumentModel._meta.get_field("status").choices or [])]
+        format_choices = [{"value": c[0], "label": str(c[1])} for c in (DocumentRequest._meta.get_field("format").choices or [])]
+
+        document_requests = DocumentRequest.objects.all().only("id", "title").order_by("title")
+        document_request_options = [{"value": str(d.id), "label": str(d.title)} for d in document_requests]
+
+        # Is Active choices (Yes/No)
+        # Match django-filter boolean parsing used in Django UI forms (typically "True"/"False" strings)
+        is_active_options = [
+            {"value": "", "label": "Select"},
+            {"value": "True", "label": "Yes"},
+            {"value": "False", "label": "No"},
+        ]
+
+        perms = {
+            "can_create_document_request": request.user.has_perm("horilla_documents.add_documentrequest"),
+            "can_edit_document_request": request.user.has_perm("horilla_documents.change_documentrequest"),
+            "can_delete_document_request": request.user.has_perm("horilla_documents.delete_documentrequest"),
+            "can_delete_document": request.user.has_perm("horilla_documents.delete_document"),
+            # Approve/reject endpoints require add_document in API decorators
+            "can_approve_reject": request.user.has_perm("horilla_documents.add_document"),
+            "can_bulk_approve_reject": request.user.has_perm("horilla_documents.add_document"),
+        }
+
+        return Response(
+            {
+                "search": {"key": "search", "label": "Search"},
+                "filters": [
+                    {
+                        "id": "work_info",
+                        "label": "Work Info",
+                        "fields": [
+                            {
+                                "key": "employee_id",
+                                "label": "Employee",
+                                "type": "select",
+                                "options": [{"value": "", "label": "Select"}] + employee_options,
+                            },
+                            {
+                                "key": "employee_id__employee_work_info__job_position_id",
+                                "label": "Job Position",
+                                "type": "select",
+                                "options": [{"value": "", "label": "Select"}]
+                                + [{"value": str(p.id), "label": str(p.job_position)} for p in job_positions],
+                            },
+                            {
+                                "key": "employee_id__employee_work_info__shift_id",
+                                "label": "Shift",
+                                "type": "select",
+                                "options": [{"value": "", "label": "Select"}]
+                                + [{"value": str(s.id), "label": str(s.employee_shift)} for s in shifts],
+                            },
+                            {
+                                "key": "employee_id__employee_work_info__company_id",
+                                "label": "Company",
+                                "type": "select",
+                                "options": [{"value": "", "label": "Select"}]
+                                + [{"value": str(c.id), "label": str(c.company)} for c in companies],
+                            },
+                            {
+                                "key": "employee_id__is_active",
+                                "label": "Is Active?",
+                                "type": "select",
+                                "options": is_active_options,
+                            },
+                            {
+                                "key": "employee_id__employee_work_info__department_id",
+                                "label": "Department",
+                                "type": "select",
+                                "options": [{"value": "", "label": "Select"}]
+                                + [{"value": str(d.id), "label": str(d.department)} for d in departments],
+                            },
+                            {
+                                "key": "employee_id__employee_work_info__job_role_id",
+                                "label": "Job Role",
+                                "type": "select",
+                                "options": [{"value": "", "label": "Select"}] + job_role_options,
+                            },
+                            {
+                                "key": "employee_id__employee_work_info__work_type_id",
+                                "label": "Work Type",
+                                "type": "select",
+                                "options": [{"value": "", "label": "Select"}]
+                                + [{"value": str(w.id), "label": str(w.work_type)} for w in work_types],
+                            },
+                            {
+                                "key": "employee_id__employee_work_info__reporting_manager_id",
+                                "label": "Reporting Manager",
+                                "type": "select",
+                                "options": [{"value": "", "label": "Select"}] + reporting_manager_options,
+                            },
+                            {
+                                "key": "employee_id__gender",
+                                "label": "Gender",
+                                "type": "select",
+                                "options": [{"value": "", "label": "Select"}] + gender_choices,
+                            },
+                        ],
+                    },
+                    {
+                        "id": "document_request",
+                        "label": "Document Request",
+                        "fields": [
+                            {
+                                "key": "status",
+                                "label": "Status",
+                                "type": "select",
+                                "options": [{"value": "", "label": "Select"}] + status_choices,
+                            },
+                            {
+                                "key": "document_request_id",
+                                "label": "Document request",
+                                "type": "select",
+                                "options": [{"value": "", "label": "Select"}] + document_request_options,
+                            },
+                        ],
+                    },
+                ],
+                "actions": {
+                    "bulk": [
+                        {"id": "bulk_approve", "label": "Bulk Approve Requests", "status": "approved"},
+                        {"id": "bulk_reject", "label": "Bulk Reject Requests", "status": "rejected"},
+                    ],
+                    "create": {"id": "create", "label": "Create"},
+                },
+                "document_request_form": {
+                    "formats": format_choices,
+                },
+                "permissions": perms,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class DocumentRequestsGroupedView(APIView):
+    """
+    Grouped Documents endpoint that mirrors Django accordion UI:
+    - Groups documents by document_request_id (DocumentRequest)
+    - Nested pagination per group via dynamic query param names
+    - Outer pagination for groups via ?page=
+
+    Accepts same filter params as DocumentRequestFilter + search.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from employee.filters import DocumentRequestFilter
+        from horilla.group_by import group_by_queryset
+
+        qs = DocumentRequestFilter(request.GET).qs
+        qs = qs.exclude(document_request_id__isnull=True).order_by("-document_request_id")
+        qs = filtersubordinates(request, qs, perm="horilla_documents.view_documentrequest", field="employee_id")
+
+        groups_page = group_by_queryset(qs, "document_request_id", request.GET.get("page"), "page")
+        group_items = list(groups_page.object_list)
+
+        request_ids = [
+            g.get("grouper").id for g in group_items if g.get("grouper") is not None
+        ]
+        counts = {}
+        if request_ids:
+            uploaded_filter = Q(document__isnull=False) & ~Q(document="")
+            agg = (
+                qs.filter(document_request_id__in=request_ids)
+                .values("document_request_id")
+                .annotate(total=Count("id"), uploaded=Count("id", filter=uploaded_filter))
+            )
+            counts = {row["document_request_id"]: row for row in agg}
+
+        results = []
+        for g in group_items:
+            grouper = g.get("grouper")
+            list_page = g.get("list")
+            dynamic_name = g.get("dynamic_name")
+            if not grouper or not list_page:
+                continue
+
+            c = counts.get(grouper.id, {"total": 0, "uploaded": 0})
+            docs = []
+            for doc in list_page.object_list:
+                docs.append(
+                    {
+                        "id": str(doc.id),
+                        "title": doc.title or "",
+                        "status": doc.status or "",
+                        "has_file": bool(getattr(doc, "document", None)),
+                        "document": doc.document.url if getattr(doc, "document", None) else None,
+                        "reject_reason": doc.reject_reason or "",
+                        "issue_date": doc.issue_date,
+                        "expiry_date": doc.expiry_date,
+                        "notify_before": doc.notify_before,
+                        "employee_id": str(doc.employee_id_id) if doc.employee_id_id else None,
+                        "employee_name": doc.employee_id.get_full_name() if getattr(doc, "employee_id", None) else "",
+                        "document_request_id": str(doc.document_request_id_id) if doc.document_request_id_id else None,
+                        "document_request_title": grouper.title,
+                        "document_request_description": grouper.description or "",
+                        "document_request_format": grouper.format,
+                        "document_request_max_size": grouper.max_size,
+                    }
+                )
+
+            results.append(
+                {
+                    "request": {
+                        "id": str(grouper.id),
+                        "title": grouper.title,
+                        "description": grouper.description or "",
+                        "format": grouper.format,
+                        "max_size": grouper.max_size,
+                    },
+                    "uploaded_count": int(c.get("uploaded") or 0),
+                    "total_count": int(c.get("total") or 0),
+                    "dynamic_page_param": dynamic_name,
+                    "page": {
+                        "number": list_page.number,
+                        "num_pages": list_page.paginator.num_pages,
+                        "has_previous": list_page.has_previous(),
+                        "has_next": list_page.has_next(),
+                        "previous_page_number": list_page.previous_page_number() if list_page.has_previous() else None,
+                        "next_page_number": list_page.next_page_number() if list_page.has_next() else None,
+                    },
+                    "documents": docs,
+                }
+            )
+
+        return Response(
+            {
+                "count": groups_page.paginator.count,
+                "page": groups_page.number,
+                "num_pages": groups_page.paginator.num_pages,
+                "has_previous": groups_page.has_previous(),
+                "has_next": groups_page.has_next(),
+                "previous_page_number": groups_page.previous_page_number() if groups_page.has_previous() else None,
+                "next_page_number": groups_page.next_page_number() if groups_page.has_next() else None,
+                "results": results,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class EmployeeDocumentsMetaView(APIView):
+    """
+    Meta endpoint for Employee Profile > Documents tab.
+    Provides permission flags + common choices needed to render the UI without hardcoding.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            status_field = Document._meta.get_field("status")
+            status_choices = [{"value": v, "label": l} for v, l in status_field.choices]
+        except Exception:
+            status_choices = []
+
+        permissions = {
+            "can_create": request.user.has_perm("horilla_documents.add_document"),
+            "can_change": request.user.has_perm("horilla_documents.change_document"),
+            "can_delete": request.user.has_perm("horilla_documents.delete_document"),
+            # Approve/Reject endpoints are manager-only in this codebase.
+            "can_approve_reject": request.user.has_perm("horilla_documents.add_document"),
+            # DocumentViewAPIView allows view when user has view_documentrequest (or is owner)
+            "can_view_file": request.user.has_perm("horilla_documents.view_documentrequest"),
+        }
+
+        return Response(
+            {
+                "permissions": permissions,
+                "status_choices": status_choices,
+                "reject_reason_required": True,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 def object_delete(cls, pk):
@@ -300,6 +764,15 @@ class EmployeeAPIView(APIView):
             serializer = EmployeeSerializer(employee, data=request.data, partial=True)
             if serializer.is_valid():
                 serializer.save()
+                # Sync linked Django User so Django admin "USER" column and password reset match employee email
+                employee.refresh_from_db()
+                linked_user = getattr(employee, "employee_user_id", None)
+                if linked_user:
+                    new_email = (getattr(employee, "email", None) or "").strip()
+                    if new_email and (linked_user.email != new_email or linked_user.username != new_email):
+                        linked_user.email = new_email
+                        linked_user.username = new_email
+                        linked_user.save(update_fields=["email", "username"])
                 return Response(serializer.data)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         return Response({"error": "You don't have permission"}, status=400)
@@ -316,6 +789,41 @@ class EmployeeAPIView(APIView):
         except ProtectedError as e:
             return Response({"error": str(e)}, status=status.HTTP_204_NO_CONTENT)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class EmployeeSendPasswordResetView(APIView):
+    """
+    Send password reset email for an employee (matches backend employee-reset-password:
+    uses employee's linked user and sends to user.email).
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        try:
+            employee = Employee.objects.get(pk=pk)
+        except Employee.DoesNotExist:
+            return Response({"error": "Employee does not exist"}, status=status.HTTP_404_NOT_FOUND)
+        user = getattr(employee, "employee_user_id", None)
+        if not user:
+            return Response({"error": "Employee has no linked user account."}, status=status.HTTP_400_BAD_REQUEST)
+        if not getattr(user, "email", None) or not user.email.strip():
+            return Response(
+                {"error": "User account has no email set. Configure email in the user account."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        token = _password_reset_token_generator.make_token(user)
+        uid = urlsafe_base64_encode(force_bytes(user.pk))
+        frontend_url = getattr(settings, "FRONTEND_URL", "http://localhost:5173")
+        reset_link = f"{frontend_url}/reset-password/{uid}/{token}"
+        send_mail(
+            subject="Password Reset Request - HRMS",
+            message=f"Click the link to reset your password: {reset_link}\n\nThis link will expire in 24 hours.\n\nIf you did not request this, please ignore this email.",
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[user.email],
+            fail_silently=False,
+        )
+        return Response({"detail": "Password reset link sent to the employee's email."}, status=status.HTTP_200_OK)
 
 
 class EmployeeListAPIView(APIView):
@@ -490,6 +998,23 @@ class EmployeeWorkInformationAPIView(APIView):
             )
             if serializer.is_valid():
                 serializer.save()
+                # Sync linked User when work email changes so Django admin stays in sync
+                work_info.refresh_from_db()
+                employee = getattr(work_info, "employee_id", None)
+                if employee:
+                    linked_user = getattr(employee, "employee_user_id", None)
+                    if linked_user:
+                        effective_email = (
+                            (getattr(work_info, "email", None) or "").strip()
+                            or (getattr(employee, "email", None) or "").strip()
+                        )
+                        if effective_email and (
+                            linked_user.email != effective_email
+                            or linked_user.username != effective_email
+                        ):
+                            linked_user.email = effective_email
+                            linked_user.username = effective_email
+                            linked_user.save(update_fields=["email", "username"])
                 return Response(serializer.data)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         return Response({"message": "No permission"}, status=400)
@@ -1370,7 +1895,14 @@ class DocumentRequestApproveRejectView(APIView):
     @manager_permission_required("horilla_documents.add_document")
     def post(self, request, id, status):
         document = Document.objects.filter(id=id).first()
+        if not document:
+            return Response({"error": "Document not found"}, status=404)
         document.status = status
+        # Django UI collects reject reason on reject; support that here too.
+        if status == "rejected":
+            reject_reason = request.data.get("reject_reason") if isinstance(request.data, dict) else None
+            if reject_reason is not None:
+                document.reject_reason = str(reject_reason)
         document.save()
         return Response({"status": "success"}, status=200)
 
@@ -1382,6 +1914,7 @@ class DocumentBulkApproveRejectAPIView(APIView):
     def put(self, request):
         ids = request.data.get("ids", None)
         status = request.data.get("status", None)
+        reject_reason = request.data.get("reject_reason", None)
         status_code = 200
         response = []
 
@@ -1394,6 +1927,8 @@ class DocumentBulkApproveRejectAPIView(APIView):
                     continue
                 response.append({"id": document.id, "status": "success"})
                 document.status = status
+                if status == "rejected" and reject_reason is not None:
+                    document.reject_reason = str(reject_reason)
                 document.save()
         else:
             status_code = 400
