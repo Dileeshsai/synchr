@@ -2700,12 +2700,22 @@ def work_info_export(request):
     employees = filtersubordinatesemployeemodel(
         request, employees, "employee.view_employee"
     )
+
+    # If export is triggered from "selected employees" actions, ids is passed.
+    # Apply ids regardless of whether selected_fields is provided (Django UI allows custom columns + filters).
+    ids = request.GET.get("ids")
+    if ids:
+        try:
+            id_list = json.loads(ids)
+            if isinstance(id_list, list) and id_list:
+                employees = employees.filter(id__in=id_list)
+        except Exception:
+            # Ignore invalid ids payload and fall back to filtered queryset
+            pass
+
     selected_fields = request.GET.getlist("selected_fields")
     if not selected_fields:
         selected_fields = form.fields["selected_fields"].initial
-        ids = request.GET.get("ids")
-        id_list = json.loads(ids)
-        employees = Employee.objects.filter(id__in=id_list)
 
     prefetch_fields = list(set(f.split("__")[0] for f in selected_fields if "__" in f))
     if prefetch_fields:
