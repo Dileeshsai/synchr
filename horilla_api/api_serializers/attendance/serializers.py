@@ -15,6 +15,9 @@ class AttendanceSerializer(serializers.ModelSerializer):
     badge_id = serializers.CharField(source="employee_id.badge_id", read_only=True)
     employee_profile_url = serializers.SerializerMethodField(read_only=True)
     work_type = serializers.CharField(source="work_type_id.work_type", read_only=True)
+    hours_pending = serializers.SerializerMethodField(read_only=True)
+    batch_attendance_title = serializers.SerializerMethodField(read_only=True)
+    attendance_overtime = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Attendance
@@ -28,7 +31,6 @@ class AttendanceSerializer(serializers.ModelSerializer):
             "requested_data",
             "is_validate_request",
             "is_validate_request_approved",
-            "attendance_overtime",
         ]
 
     def validate(self, data):
@@ -52,6 +54,24 @@ class AttendanceSerializer(serializers.ModelSerializer):
         except:
             return None
 
+    def get_hours_pending(self, obj):
+        try:
+            return obj.hours_pending
+        except Exception:
+            return None
+
+    def get_attendance_overtime(self, obj):
+        try:
+            return obj.attendance_overtime
+        except Exception:
+            return None
+
+    def get_batch_attendance_title(self, obj):
+        try:
+            return obj.batch_attendance_id.title if obj.batch_attendance_id else None
+        except Exception:
+            return None
+
 
 class AttendanceRequestSerializer(serializers.ModelSerializer):
     employee_first_name = serializers.CharField(
@@ -63,17 +83,16 @@ class AttendanceRequestSerializer(serializers.ModelSerializer):
     shift_name = serializers.CharField(source="shift_id.employee_shift", read_only=True)
     badge_id = serializers.CharField(source="employee_id.badge_id", read_only=True)
     employee_profile_url = serializers.SerializerMethodField(read_only=True)
+    batch_attendance_title = serializers.SerializerMethodField(read_only=True)
+    requested_fields = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Attendance
         exclude = [
-            "attendance_overtime",
             "attendance_overtime_approve",
-            "attendance_validated",
             "approved_overtime_second",
             "is_validate_request",
             "is_validate_request_approved",
-            "request_type",
             "created_at",
         ]
 
@@ -146,6 +165,19 @@ class AttendanceRequestSerializer(serializers.ModelSerializer):
         except:
             return None
 
+    def get_batch_attendance_title(self, obj):
+        try:
+            return obj.batch_attendance_id.title if obj.batch_attendance_id else None
+        except Exception:
+            return None
+
+    def get_requested_fields(self, obj):
+        try:
+            rf = obj.requested_fields
+            return list(rf) if rf else []
+        except Exception:
+            return []
+
 
 class AttendanceOverTimeSerializer(serializers.ModelSerializer):
     badge_id = serializers.CharField(source="employee_id.badge_id", read_only=True)
@@ -156,6 +188,9 @@ class AttendanceOverTimeSerializer(serializers.ModelSerializer):
         source="employee_id.employee_last_name", read_only=True
     )
     employee_profile_url = serializers.SerializerMethodField(read_only=True)
+    not_validated_hrs = serializers.SerializerMethodField(read_only=True)
+    not_approved_ot_hrs = serializers.SerializerMethodField(read_only=True)
+    month_index = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = AttendanceOverTime
@@ -171,13 +206,34 @@ class AttendanceOverTimeSerializer(serializers.ModelSerializer):
             "worked_hours",
             "pending_hours",
             "overtime",
+            "not_validated_hrs",
+            "not_approved_ot_hrs",
+            "month_index",
         ]
 
     def get_employee_profile_url(self, obj):
         try:
             employee_profile = obj.employee_id.employee_profile
             return employee_profile.url
-        except:
+        except Exception:
+            return None
+
+    def get_not_validated_hrs(self, obj):
+        try:
+            return obj.not_validated_hrs()
+        except Exception:
+            return "00:00"
+
+    def get_not_approved_ot_hrs(self, obj):
+        try:
+            return obj.not_approved_ot_hrs()
+        except Exception:
+            return "00:00"
+
+    def get_month_index(self, obj):
+        try:
+            return obj.get_month_index()
+        except Exception:
             return None
 
 
@@ -203,6 +259,37 @@ class AttendanceLateComeEarlyOutSerializer(serializers.ModelSerializer):
     attendance_clock_out = serializers.TimeField(
         source="attendance_id.attendance_clock_out", read_only=True, allow_null=True
     )
+    minimum_hour = serializers.CharField(
+        source="attendance_id.minimum_hour", read_only=True, allow_null=True
+    )
+    attendance_worked_hour = serializers.CharField(
+        source="attendance_id.attendance_worked_hour", read_only=True, allow_null=True
+    )
+    penalties_count = serializers.SerializerMethodField()
+    shift_name = serializers.SerializerMethodField()
+    work_type_name = serializers.SerializerMethodField()
+    attendance_validated = serializers.SerializerMethodField()
+
+    def get_penalties_count(self, obj):
+        return obj.get_penalties_count()
+
+    def get_shift_name(self, obj):
+        att = getattr(obj, "attendance_id", None)
+        if att and hasattr(att, "shift_id") and att.shift_id:
+            return str(att.shift_id)
+        return None
+
+    def get_work_type_name(self, obj):
+        att = getattr(obj, "attendance_id", None)
+        if att and hasattr(att, "work_type_id") and att.work_type_id:
+            return str(att.work_type_id)
+        return None
+
+    def get_attendance_validated(self, obj):
+        att = getattr(obj, "attendance_id", None)
+        if att is not None and hasattr(att, "attendance_validated"):
+            return att.attendance_validated
+        return None
 
     class Meta:
         model = AttendanceLateComeEarlyOut
@@ -238,6 +325,40 @@ class AttendanceValidationConditionSerializer(serializers.ModelSerializer):
             "company_id",
             "created_at",
         ]
+
+
+class AttendanceRequestCommentSerializer(serializers.ModelSerializer):
+    """Serializer for attendance request comments (list/detail)."""
+
+    employee = serializers.SerializerMethodField()
+
+    class Meta:
+        model = AttendanceRequestComment
+        fields = ["id", "comment", "created_at", "employee"]
+
+    def get_employee(self, obj):
+        emp = getattr(obj, "employee_id", None)
+        if not emp:
+            return None
+        avatar = getattr(emp, "get_avatar", None)
+        if callable(avatar):
+            try:
+                avatar = avatar()
+            except Exception:
+                avatar = None
+        return {
+            "id": emp.id,
+            "full_name": emp.get_full_name() if hasattr(emp, "get_full_name") else str(emp),
+            "avatar": avatar,
+        }
+
+
+class AttendanceRequestCommentCreateSerializer(serializers.ModelSerializer):
+    """Serializer for creating attendance request comments."""
+
+    class Meta:
+        model = AttendanceRequestComment
+        fields = ["comment"]
 
 
 class AttendanceGeneralSettingSerializer(serializers.ModelSerializer):

@@ -78,6 +78,11 @@ urlpatterns = [
         name="api-rotating_worktype_assign_detail_with_pk",
     ),
     path(
+        "employee-shift-day/",
+        views.EmployeeShiftDayView.as_view(),
+        name="api-employee_shift_day",
+    ),
+    path(
         "employee-shift/",
         views.EmployeeShiftView.as_view(),
         name="api-employee_shift_detail",
