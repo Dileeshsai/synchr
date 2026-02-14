@@ -113,7 +113,6 @@ class ClockInAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        print("========", request.user.employee_get.check_online())
         if not request.user.employee_get.check_online():
             try:
                 # Determine if WorkType is WFH-like; if so, skip geofence
@@ -136,18 +135,18 @@ class ClockInAPIView(APIView):
                 pass
             employee, work_info = employee_exists(request)
             datetime_now = datetime.now()
-            if request._dict_.get("datetime"):
+            if request.__dict__.get("datetime"):
                 datetime_now = request.datetime
             if employee and work_info is not None:
                 shift = work_info.shift_id
                 date_today = date.today()
-                if request._dict_.get("date"):
+                if request.__dict__.get("date"):
                     date_today = request.date
                 attendance_date = date_today
                 day = date_today.strftime("%A").lower()
                 day = EmployeeShiftDay.objects.get(day=day)
                 now = datetime.now().strftime("%H:%M")
-                if request._dict_.get("time"):
+                if request.__dict__.get("time"):
                     now = request.time.strftime("%H:%M")
                 now_sec = strtime_seconds(now)
                 mid_day_sec = strtime_seconds("12:00")
@@ -224,7 +223,6 @@ class ClockOutAPIView(APIView):
         except:
             pass
         if request.user.employee_get.check_online():
-            print("----------------")
             current_date = date.today()
             current_time = datetime.now().time()
             current_datetime = datetime.now()
@@ -251,7 +249,7 @@ class AttendanceListPagination(PageNumberPagination):
     page_size = 15
     page_size_query_param = "page_size"
 
-    def get_page_number(self, request):
+    def get_page_number(self, request, paginator=None):
         type_from_url = None
         if getattr(request, "resolver_match", None) and getattr(request.resolver_match, "kwargs", None):
             type_from_url = request.resolver_match.kwargs.get("type")
@@ -2369,25 +2367,25 @@ class OfflineEmployeesListView(APIView):
             whens = [
                 When(
                     Q(
-                        leaverequest_set__start_date__lte=today,
-                        leaverequest_set__end_date__gte=today,
-                        leaverequest_set__status="approved",
+                        leaverequest__start_date__lte=today,
+                        leaverequest__end_date__gte=today,
+                        leaverequest__status="approved",
                     ),
                     then=Value("On Leave"),
                 ),
                 When(
                     Q(
-                        leaverequest_set__start_date__lte=today,
-                        leaverequest_set__end_date__gte=today,
-                        leaverequest_set__status="requested",
+                        leaverequest__start_date__lte=today,
+                        leaverequest__end_date__gte=today,
+                        leaverequest__status="requested",
                     ),
                     then=Value("Waiting Approval"),
                 ),
                 When(
                     Q(
-                        leaverequest_set__start_date__lte=today,
-                        leaverequest_set__end_date__gte=today,
-                        leaverequest_set__status__in=["cancelled", "rejected"],
+                        leaverequest__start_date__lte=today,
+                        leaverequest__end_date__gte=today,
+                        leaverequest__status__in=["cancelled", "rejected"],
                     ),
                     then=Value("Canceled / Rejected"),
                 ),

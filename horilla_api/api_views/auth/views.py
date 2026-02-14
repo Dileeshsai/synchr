@@ -1,3 +1,4 @@
+import logging
 from django.contrib.auth import authenticate, get_user_model
 from django.contrib.auth.models import Group, Permission
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
@@ -18,6 +19,7 @@ from employee.models import Employee
 
 User = get_user_model()
 token_generator = PasswordResetTokenGenerator()
+logger = logging.getLogger(__name__)
 
 
 class LoginAPIView(APIView):
@@ -38,7 +40,7 @@ class LoginAPIView(APIView):
                         # Fallback search if reverse relation is missing
                         employee = Employee.objects.filter(employee_user_id=user).first()
                 except Exception as e:
-                    print(f"Error retrieving employee for user {user.username}: {str(e)}")
+                    logger.exception("Error retrieving employee for user %s", user.username)
                     return Response({"error": f"Employee record retrieval failed: {str(e)}"}, status=500)
 
                 if not employee:

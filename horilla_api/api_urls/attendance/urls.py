@@ -64,7 +64,8 @@ urlpatterns = [
     path("clock-in/", ClockInAPIView.as_view(), name="api-check-in"),
     path("clock-out/", ClockOutAPIView.as_view(), name="api-check-out"),
     path("attendance/", AttendanceView.as_view(), name="api-attendance-list"),
-    path("attendance/<int:pk>", AttendanceView.as_view(), name="api-attendance-detail"),
+    path("attendance/<int:pk>/", AttendanceView.as_view(), name="api-attendance-detail"),
+    path("attendance/<int:pk>", AttendanceView.as_view(), name="api-attendance-detail-no-slash"),
     path(
         "attendance/list/<str:type>",
         AttendanceView.as_view(),

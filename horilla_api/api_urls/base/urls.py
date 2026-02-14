@@ -83,6 +83,11 @@ urlpatterns = [
         name="api-employee_shift_day",
     ),
     path(
+        "employee-shift-days/",
+        views.EmployeeShiftDayView.as_view(),
+        name="api-employee_shift_days",
+    ),
+    path(
         "employee-shift/",
         views.EmployeeShiftView.as_view(),
         name="api-employee_shift_detail",
@@ -279,6 +284,16 @@ urlpatterns = [
         "biometric-attendance/",
         views.BiometricAttendanceAPIView.as_view(),
         name="api-biometric-attendance",
+    ),
+    path(
+        "biometric-devices/",
+        views.BiometricDevicesAPIView.as_view(),
+        name="api-biometric-devices-list",
+    ),
+    path(
+        "biometric-devices/<uuid:pk>/",
+        views.BiometricDevicesAPIView.as_view(),
+        name="api-biometric-devices-detail",
     ),
     path(
         "attendance-allowed-ip/",

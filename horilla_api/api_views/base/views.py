@@ -50,6 +50,7 @@ from ...api_methods.base.methods import groupby_queryset, permission_based_query
 from ...api_serializers.base.serializers import (
     AttendanceAllowedIPSerializer,
     BiometricAttendanceSerializer,
+    BiometricDeviceSerializer,
     CompanySerializer,
     DepartmentSerializer,
     EmployeeShiftDaySerializer,
@@ -1421,6 +1422,107 @@ class AttendanceAllowedIPAPIView(APIView):
             serializer.save()
             return Response(serializer.data, status=200)
         return Response(serializer.errors, status=400)
+
+
+class BiometricDevicesAPIView(APIView):
+    """
+    CRUD for BiometricDevices.
+    GET list: paginated devices (requires biometric.view_biometricdevices).
+    GET detail: single device by UUID.
+    POST: create device (requires biometric.add_biometricdevices).
+    PUT/PATCH: update device (requires biometric.change_biometricdevices).
+    DELETE: delete device (requires biometric.delete_biometricdevices).
+    """
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = BiometricDeviceSerializer
+
+    def get_queryset(self):
+        from biometric.models import BiometricDevices
+
+        return BiometricDevices.objects.all().order_by("-created_at")
+
+    @method_decorator(permission_required("biometric.view_biometricdevices"))
+    def get(self, request, pk=None):
+        from biometric.models import BiometricDevices
+
+        queryset = self.get_queryset()
+        if pk:
+            try:
+                device = queryset.get(id=pk)
+            except (ValueError, BiometricDevices.DoesNotExist):
+                return Response({"detail": "Device not found."}, status=404)
+            serializer = self.serializer_class(device)
+            return Response(serializer.data, status=200)
+        paginator = PageNumberPagination()
+        page = paginator.paginate_queryset(queryset, request)
+        serializer = self.serializer_class(page, many=True)
+        return paginator.get_paginated_response(serializer.data)
+
+    @method_decorator(permission_required("biometric.add_biometricdevices"))
+    def post(self, request):
+        serializer = self.serializer_class(data=request.data)
+        if serializer.is_valid():
+            try:
+                serializer.save()
+                return Response(serializer.data, status=201)
+            except Exception as e:
+                return Response(
+                    {"error": str(e) if hasattr(e, "message") else "Validation failed"},
+                    status=400,
+                )
+        return Response(serializer.errors, status=400)
+
+    @method_decorator(permission_required("biometric.change_biometricdevices"))
+    def put(self, request, pk):
+        from biometric.models import BiometricDevices
+
+        try:
+            device = self.get_queryset().get(id=pk)
+        except (ValueError, BiometricDevices.DoesNotExist):
+            return Response({"detail": "Device not found."}, status=404)
+        serializer = self.serializer_class(device, data=request.data, partial=False)
+        if serializer.is_valid():
+            try:
+                serializer.save()
+                return Response(serializer.data, status=200)
+            except Exception as e:
+                return Response(
+                    {"error": str(e) if hasattr(e, "message") else "Validation failed"},
+                    status=400,
+                )
+        return Response(serializer.errors, status=400)
+
+    @method_decorator(permission_required("biometric.change_biometricdevices"))
+    def patch(self, request, pk):
+        from biometric.models import BiometricDevices
+
+        try:
+            device = self.get_queryset().get(id=pk)
+        except (ValueError, BiometricDevices.DoesNotExist):
+            return Response({"detail": "Device not found."}, status=404)
+        serializer = self.serializer_class(device, data=request.data, partial=True)
+        if serializer.is_valid():
+            try:
+                serializer.save()
+                return Response(serializer.data, status=200)
+            except Exception as e:
+                return Response(
+                    {"error": str(e) if hasattr(e, "message") else "Validation failed"},
+                    status=400,
+                )
+        return Response(serializer.errors, status=400)
+
+    @method_decorator(permission_required("biometric.delete_biometricdevices"))
+    def delete(self, request, pk):
+        from biometric.models import BiometricDevices
+
+        try:
+            device = self.get_queryset().get(id=pk)
+            device.delete()
+            return Response(status=204)
+        except (ValueError, BiometricDevices.DoesNotExist):
+            return Response({"detail": "Device not found."}, status=404)
 
 
 class GeneralSettingsAPIView(APIView):

@@ -33,6 +33,56 @@ class BiometricAttendanceSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "company_id"]
 
 
+class BiometricDeviceSerializer(serializers.ModelSerializer):
+    """Serializer for BiometricDevices - list/detail/create/update."""
+
+    company_name = serializers.CharField(
+        source="company_id.company", read_only=True, allow_null=True
+    )
+    machine_type_display = serializers.CharField(
+        source="get_machine_type_display", read_only=True, allow_null=True
+    )
+    device_direction_display = serializers.CharField(
+        source="get_device_direction_display", read_only=True, allow_null=True
+    )
+
+    class Meta:
+        from biometric.models import BiometricDevices
+
+        model = BiometricDevices
+        fields = [
+            "id",
+            "name",
+            "machine_type",
+            "machine_type_display",
+            "machine_ip",
+            "port",
+            "zk_password",
+            "bio_username",
+            "bio_password",
+            "anviz_request_id",
+            "api_url",
+            "api_key",
+            "api_secret",
+            "is_live",
+            "is_scheduler",
+            "scheduler_duration",
+            "last_fetch_date",
+            "last_fetch_time",
+            "device_direction",
+            "device_direction_display",
+            "company_id",
+            "company_name",
+            "is_active",
+        ]
+        read_only_fields = ["id", "last_fetch_date", "last_fetch_time"]
+        extra_kwargs = {
+            "zk_password": {"write_only": True, "required": False, "allow_blank": True},
+            "bio_password": {"write_only": True, "required": False, "allow_blank": True},
+            "api_key": {"write_only": True, "required": False, "allow_blank": True},
+            "api_secret": {"write_only": True, "required": False, "allow_blank": True},
+        }
+
 class AttendanceAllowedIPSerializer(serializers.ModelSerializer):
     """
     Expose AttendanceAllowedIP as:

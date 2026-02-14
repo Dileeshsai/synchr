@@ -20,6 +20,7 @@ from leave.filters import *
 from leave.forms import AvailableLeaveColumnExportForm
 from leave.methods import filter_conditional_leave_request
 from leave.models import AvailableLeave, LeaveRequest, LeaveType, LeaverequestComment, LeaverequestFile
+from leave.threading import LeaveMailSendThread
 from notifications.signals import notify
 
 from ...api_decorators.base.decorators import manager_permission_required
@@ -100,6 +101,9 @@ class EmployeeLeaveRequestGetCreateAPIView(APIView):
                     redirect=f"/leave/request-view?id={leave_request.id}",
                     api_redirect=f"/api/leave/request/{leave_request.id}/",
                 )
+            _django_request = getattr(request, "_request", request)
+            mail_thread = LeaveMailSendThread(_django_request, leave_request, type="request")
+            mail_thread.start()
             return Response(
                 userLeaveRequestGetAllSerilaizer(leave_request).data, status=201
             )
@@ -625,6 +629,9 @@ class LeaveRequestGetCreateAPIView(APIView):
                     redirect=f"/leave/request-view?id={leave_request.id}",
                     api_redirect=f"/api/leave/request/{leave_request.id}/",
                 )
+            _django_request = getattr(request, "_request", request)
+            mail_thread = LeaveMailSendThread(_django_request, leave_request, type="request")
+            mail_thread.start()
             return Response(
                 LeaveRequestGetSerilaizer(
                     leave_request, context={"request": request}
@@ -874,10 +881,13 @@ class LeaveRequestApproveAPIView(APIView):
                 leave_request.status = "approved"
                 leave_request.save()
 
+    def post(self, request, pk):
+        return self.put(request, pk)
+
     @manager_permission_required("leave.change_leaverequest")
     def put(self, request, pk):
         leave_request = self.get_leave_request(pk)
-        serializer = LeaveRequestApproveSerializer(leave_request, data=request.data)
+        serializer = LeaveRequestApproveSerializer(leave_request, data=request.data or {})
         if serializer.is_valid():
             available_leave = serializer.validated_data.get("available_leave")
             if not leave_request.multiple_approvals():
@@ -899,6 +909,9 @@ class LeaveRequestApproveAPIView(APIView):
                     redirect=f"/leave/user-request-view?id={leave_request.id}",
                     api_redirect=f"/api/leave/user-request/{leave_request.id}",
                 )
+            _django_request = getattr(request, "_request", request)
+            mail_thread = LeaveMailSendThread(_django_request, leave_request, type="approve")
+            mail_thread.start()
             return Response(status=200)
         return Response(serializer.errors, status=400)
 
@@ -925,11 +938,21 @@ class LeaveRequestRejectAPIView(APIView):
         leave_request.status = "rejected"
         leave_request.save()
 
+    def post(self, request, pk):
+        return self.put(request, pk)
+
     @manager_permission_required("leave.change_leaverequest")
     def put(self, request, pk):
         leave_request = self.get_leave_request(pk)
         employee_id = request.user.employee_get
         if leave_request.status != "rejected":
+            reason = (
+                request.data.get("reject_reason")
+                or request.data.get("reason")
+                or ""
+            )
+            if reason:
+                leave_request.reject_reason = reason
             self.leave_calculation(leave_request, employee_id)
             with contextlib.suppress(Exception):
                 notify.send(
@@ -944,6 +967,9 @@ class LeaveRequestRejectAPIView(APIView):
                     redirect=f"/leave/user-request-view?id={leave_request.id}",
                     api_redirect=f"/api/leave/user-request/{leave_request.id}/",
                 )
+            _django_request = getattr(request, "_request", request)
+            mail_thread = LeaveMailSendThread(_django_request, leave_request, type="reject")
+            mail_thread.start()
             return Response(status=200)
         raise serializers.ValidationError("Nothing to reject.")
 
@@ -1129,6 +1155,9 @@ class LeaveRequestCancelAPIView(APIView):
                 if reason:
                     leave_request.reject_reason = reason
                 leave_request.save()
+                _django_request = getattr(request, "_request", request)
+                mail_thread = LeaveMailSendThread(_django_request, leave_request, type="cancel")
+                mail_thread.start()
                 return Response(status=200)
             raise serializers.ValidationError("Nothing to cancel.")
         raise serializers.ValidationError("Access Denied.")
@@ -1439,12 +1468,6 @@ class LeavePermissionCheckAPIView(APIView):
             pass
         return Response({"perm_list": perm_list}, status=200)
 
-class LeaveRequestApproveAPIView(APIView):
-    def post(self, request, pk):
-         return Response({"message": "Leave approved"}, status=200)
-    def put(self, request, pk):
-        # Add your approval logic here
-        return Response({"message": "Leave approved "}, status=200)
 class AllLeaveDetailsAPIView(APIView):
     permission_classes = [IsAuthenticated]
 

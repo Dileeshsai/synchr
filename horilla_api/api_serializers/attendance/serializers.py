@@ -56,7 +56,7 @@ class AttendanceSerializer(serializers.ModelSerializer):
 
     def get_hours_pending(self, obj):
         try:
-            return obj.hours_pending
+            return obj.hours_pending()
         except Exception:
             return None
 
