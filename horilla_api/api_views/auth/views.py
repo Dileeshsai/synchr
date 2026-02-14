@@ -67,8 +67,12 @@ class LoginAPIView(APIView):
                 except:
                     pass
 
+                emp_data = GetEmployeeSerializer(employee).data
+                emp_data["is_superuser"] = user.is_superuser
+                emp_data["is_staff"] = user.is_staff
+                emp_data["permissions"] = list(user.get_all_permissions()) if not user.is_superuser else []
                 result = {
-                    "employee": GetEmployeeSerializer(employee).data,
+                    "employee": emp_data,
                     "access": str(refresh.access_token),
                     "face_detection": face_detection,
                     "face_detection_image": face_detection_image,
@@ -183,7 +187,13 @@ class UserProfileAPIView(APIView):
             return Response({"error": "Employee profile not found."}, status=404)
             
         serializer = GetEmployeeSerializer(employee)
-        return Response(serializer.data)
+        data = dict(serializer.data)
+        # Include user permissions for role-based frontend access (matches Django perms)
+        user = request.user
+        data["is_superuser"] = user.is_superuser
+        data["is_staff"] = user.is_staff
+        data["permissions"] = list(user.get_all_permissions()) if not user.is_superuser else []
+        return Response(data)
 
 
 class GroupsListView(APIView):
