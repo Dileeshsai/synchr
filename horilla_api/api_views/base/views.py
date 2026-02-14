@@ -18,6 +18,7 @@ from base.models import (
     Company,
     Department,
     EmployeeShift,
+    EmployeeShiftDay,
     EmployeeShiftSchedule,
     JobPosition,
     JobRole,
@@ -50,6 +51,7 @@ from ...api_serializers.base.serializers import (
     BiometricAttendanceSerializer,
     CompanySerializer,
     DepartmentSerializer,
+    EmployeeShiftDaySerializer,
     EmployeeShiftScheduleSerializer,
     EmployeeShiftSerializer,
     JobPositionSerializer,
@@ -653,6 +655,18 @@ class IndividualWorkTypeRequestView(APIView):
         page = paginater.paginate_queryset(work_type_request, request)
         serializer = self.serializer_class(page, many=True)
         return paginater.get_paginated_response(serializer.data)
+
+
+class EmployeeShiftDayView(APIView):
+    """List EmployeeShiftDay (Monday, Tuesday, etc.) for filters."""
+
+    serializer_class = EmployeeShiftDaySerializer
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        days = EmployeeShiftDay.objects.all().order_by("id")
+        serializer = self.serializer_class(days, many=True)
+        return Response(serializer.data, status=200)
 
 
 class EmployeeShiftView(APIView):

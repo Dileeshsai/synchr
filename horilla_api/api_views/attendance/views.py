@@ -1,5 +1,6 @@
 import calendar
 import io
+import json
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 
@@ -25,6 +26,7 @@ from attendance.models import (
     Attendance,
     AttendanceActivity,
     AttendanceOverTime,
+    AttendanceRequestComment,
     BatchAttendance,
     AttendanceGeneralSetting,
     AttendanceValidationCondition,
@@ -36,12 +38,28 @@ from attendance.views.clock_in_out import *
 from attendance.views.clock_in_out import clock_out
 from attendance.views.dashboard import (
     find_expected_attendances,
+    find_early_out,
     find_late_come,
     find_on_time,
+    generate_data_set,
+    get_month_start_end_dates,
+    get_week_start_end_dates,
+    total_attendance,
 )
+from attendance.filters import AttendanceActivityFilter, AttendanceOverTimeFilter
+from attendance.methods.utils import (
+    get_diff_dict,
+    pending_hour_data,
+    strtime_seconds,
+    worked_hour_data,
+)
+from base.models import Department, TrackLateComeEarlyOut
+from attendance.forms import AttendanceActivityExportForm
 from attendance.views.views import *
 from base.backends import ConfiguredEmailBackend
 from base.methods import (
+    closest_numbers,
+    filtersubordinates,
     filtersubordinatesemployeemodel,
     generate_pdf,
     get_pagination,
@@ -61,6 +79,8 @@ from ...api_serializers.attendance.serializers import (
     AttendanceGeneralSettingSerializer,
     AttendanceLateComeEarlyOutSerializer,
     AttendanceOverTimeSerializer,
+    AttendanceRequestCommentCreateSerializer,
+    AttendanceRequestCommentSerializer,
     AttendanceRequestSerializer,
     AttendanceSerializer,
     AttendanceValidationConditionSerializer,
@@ -226,6 +246,26 @@ class ClockOutAPIView(APIView):
         return Response({"message": "Already clocked-out"}, status=400)
 
 
+class AttendanceListPagination(PageNumberPagination):
+    """Use page/vpage/opage per tab (validated / non-validated / ot) to match backend UI."""
+    page_size = 15
+    page_size_query_param = "page_size"
+
+    def get_page_number(self, request):
+        type_from_url = None
+        if getattr(request, "resolver_match", None) and getattr(request.resolver_match, "kwargs", None):
+            type_from_url = request.resolver_match.kwargs.get("type")
+        param = "page"
+        if type_from_url == "non-validated":
+            param = "vpage"
+        elif type_from_url == "ot":
+            param = "opage"
+        try:
+            return int(request.query_params.get(param, 1))
+        except (TypeError, ValueError):
+            return 1
+
+
 class AttendanceView(APIView):
     """
     Handles CRUD operations for attendance records.
@@ -282,14 +322,32 @@ class AttendanceView(APIView):
         attendances_filter_queryset = self.filterset_class(
             request.GET, queryset=attendances
         ).qs
+        sortby = request.GET.get("sortby", "").strip()
+        if sortby:
+            order_field = sortby.lstrip("-")
+            valid_sort_fields = (
+                "employee_id__employee_first_name",
+                "batch_attendance_id__title",
+                "attendance_date",
+                "attendance_clock_in_date",
+                "attendance_clock_out",
+                "attendance_clock_out_date",
+                "at_work_second",
+                "overtime_second",
+                "attendance_overtime",
+            )
+            if order_field in valid_sort_fields:
+                attendances_filter_queryset = attendances_filter_queryset.order_by(
+                    sortby
+                )
         field_name = request.GET.get("groupby_field", None)
         if field_name:
             url = request.build_absolute_uri()
             return groupby_queryset(
                 request, url, field_name, attendances_filter_queryset
             )
-        # pagination workflow
-        paginater = PageNumberPagination()
+        # pagination workflow (page/vpage/opage per tab)
+        paginater = AttendanceListPagination()
         page = paginater.paginate_queryset(attendances_filter_queryset, request)
         serializer = AttendanceSerializer(page, many=True)
         return paginater.get_paginated_response(serializer.data)
@@ -632,6 +690,23 @@ class AttendanceRequestView(APIView):
             is_validate_request=True,
         )
         request_filtered_queryset = AttendanceFilters(request.GET, requests).qs
+        sortby = request.GET.get("sortby", "").strip()
+        if sortby:
+            order_field = sortby
+            if order_field.startswith("-"):
+                order_field = order_field[1:]
+            valid_sort_fields = (
+                "employee_id__employee_first_name",
+                "batch_attendance_id__title",
+                "attendance_date",
+                "attendance_clock_in_date",
+                "attendance_clock_out_date",
+                "attendance_overtime",
+            )
+            if order_field in valid_sort_fields:
+                request_filtered_queryset = request_filtered_queryset.order_by(
+                    sortby
+                )
         field_name = request.GET.get("groupby_field", None)
         if field_name:
             # groupby workflow
@@ -674,7 +749,6 @@ class AttendanceRequestView(APIView):
             if attendance.request_type != "create_request":
                 attendance.requested_data = json.dumps(instance.serialize())
                 attendance.request_description = instance.request_description
-                # set the user level validation here
                 attendance.is_validate_request = True
                 attendance.save()
             else:
@@ -683,6 +757,318 @@ class AttendanceRequestView(APIView):
                 instance.save()
             return Response(serializer.data, status=200)
         return Response(serializer.errors, status=404)
+
+
+class AttendanceRequestBulkCreateAPIView(APIView):
+    """
+    Create attendance requests for a date range (bulk).
+    POST body: employee_id, from_date, to_date, shift_id, work_type_id,
+    attendance_clock_in, attendance_clock_out, attendance_worked_hour, minimum_hour,
+    request_description, batch_attendance_id (optional).
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    @manager_permission_required("attendance.update_attendance")
+    def post(self, request):
+        from attendance.forms import get_date_list
+        from employee.models import Employee
+
+        employee_id = request.data.get("employee_id")
+        from_date = request.data.get("from_date")
+        to_date = request.data.get("to_date")
+        if not employee_id or not from_date or not to_date:
+            return Response(
+                {"error": "employee_id, from_date, and to_date are required"},
+                status=400,
+            )
+        try:
+            from_date = datetime.strptime(str(from_date), "%Y-%m-%d").date()
+            to_date = datetime.strptime(str(to_date), "%Y-%m-%d").date()
+        except (ValueError, TypeError):
+            return Response({"error": "Invalid date format (use YYYY-MM-DD)"}, status=400)
+        if from_date > to_date:
+            return Response({"error": "from_date must be before or equal to to_date"}, status=400)
+        try:
+            employee = Employee.objects.get(id=employee_id)
+        except Employee.DoesNotExist:
+            return Response({"error": "Employee not found"}, status=404)
+        date_list = get_date_list(employee, from_date, to_date)
+        if not date_list:
+            return Response(
+                {"error": "No valid dates in range (may have existing attendance or approved leave)"},
+                status=400,
+            )
+        shift_id = request.data.get("shift_id")
+        work_type_id = request.data.get("work_type_id") or (
+            getattr(employee.employee_work_info, "work_type_id_id", None)
+            if getattr(employee, "employee_work_info", None)
+            else None
+        )
+        request_description = (request.data.get("request_description") or "").strip()
+        if not request_description:
+            return Response({"error": "request_description is required"}, status=400)
+        attendance_clock_in = request.data.get("attendance_clock_in")
+        attendance_clock_out = request.data.get("attendance_clock_out")
+        attendance_worked_hour = request.data.get("attendance_worked_hour") or "00:00"
+        minimum_hour = request.data.get("minimum_hour") or "00:00"
+        batch_attendance_id = request.data.get("batch_attendance_id")
+        created = []
+        for d in date_list:
+            data = {
+                "employee_id": employee_id,
+                "attendance_date": str(d),
+                "attendance_clock_in_date": str(d),
+                "attendance_clock_out_date": str(d),
+                "attendance_clock_in": attendance_clock_in,
+                "attendance_clock_out": attendance_clock_out,
+                "attendance_worked_hour": attendance_worked_hour,
+                "minimum_hour": minimum_hour,
+                "request_description": request_description,
+                "is_bulk_request": True,
+            }
+            if shift_id:
+                data["shift_id"] = int(shift_id)
+            if work_type_id:
+                data["work_type_id"] = int(work_type_id)
+            if batch_attendance_id:
+                data["batch_attendance_id"] = int(batch_attendance_id)
+            serializer = AttendanceRequestSerializer(data=data)
+            if serializer.is_valid():
+                inst = serializer.save()
+                inst.is_bulk_request = True
+                inst.save(update_fields=["is_bulk_request"])
+                created.append(inst.id)
+        return Response({"created": len(created), "ids": created}, status=201)
+
+
+class AttendanceRequestIdsView(APIView):
+    """
+    Returns IDs of all attendance requests matching the current filters.
+    Used for "Select All Records" across pages.
+    GET with same params as attendance-request list (filters, search, etc.)
+    Returns: { ids: [1, 2, 3, ...] }
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        requests_qs = Attendance.objects.filter(is_validate_request=True)
+        requests_qs = filtersubordinates(
+            request=request,
+            perm="attendance.view_attendance",
+            queryset=requests_qs,
+        )
+        requests_qs = requests_qs | Attendance.objects.filter(
+            employee_id__employee_user_id=request.user,
+            is_validate_request=True,
+        )
+        filtered = AttendanceFilters(request.GET, requests_qs).qs
+        ids = list(filtered.values_list("id", flat=True))
+        return Response({"ids": ids})
+
+
+class AttendanceHourAccountIdsView(APIView):
+    """
+    Returns IDs of all hour account records matching the current filters.
+    Used for "Select All Records" across pages.
+    GET with same params as attendance-hour-account list.
+    Returns: { ids: [1, 2, 3, ...] }
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        filterset = AttendanceOverTimeFilter(request.GET)
+        queryset = filterset.qs
+        self_account = queryset.filter(employee_id__employee_user_id=request.user)
+        permission_based = filtersubordinates(
+            request, queryset, "attendance.view_attendanceovertime"
+        )
+        queryset = (permission_based | self_account).distinct()
+        ids = list(queryset.values_list("id", flat=True))
+        return Response({"ids": ids})
+
+
+class AttendanceRequestValidateDetailView(APIView):
+    """
+    Returns validate modal data: employee info, current vs requested diff, prev/next ids.
+    GET /api/v1/attendance/attendance-request-validate-detail/<pk>/?requests_ids=1,2,3
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        try:
+            attendance = Attendance.objects.get(id=pk)
+        except Attendance.DoesNotExist:
+            return Response({"error": "Attendance request not found"}, status=404)
+
+        requests_qs = Attendance.objects.filter(is_validate_request=True)
+        requests_qs = filtersubordinates(
+            request=request,
+            perm="attendance.view_attendance",
+            queryset=requests_qs,
+        )
+        requests_qs = requests_qs | Attendance.objects.filter(
+            employee_id__employee_user_id=request.user,
+            is_validate_request=True,
+        )
+        if not requests_qs.filter(id=pk).exists():
+            return Response({"error": "Access denied"}, status=403)
+
+        first_dict = attendance.serialize()
+        empty_data = {
+            "employee_id": None,
+            "attendance_date": None,
+            "attendance_clock_in_date": None,
+            "attendance_clock_in": None,
+            "attendance_clock_out": None,
+            "attendance_clock_out_date": None,
+            "shift_id": None,
+            "work_type_id": None,
+            "attendance_worked_hour": None,
+            "batch_attendance_id": None,
+        }
+        if attendance.request_type == "create_request":
+            other_dict = first_dict
+            first_dict = empty_data
+        else:
+            other_dict = json.loads(attendance.requested_data) if attendance.requested_data else {}
+
+        diff_raw = get_diff_dict(first_dict, other_dict, Attendance)
+        diff = {}
+        for key, pair in diff_raw.items():
+            v1, v2 = pair
+            diff[key] = [str(v1) if v1 is not None else "", str(v2) if v2 is not None else ""]
+
+        emp = attendance.employee_id
+        department = ""
+        job_position = ""
+        try:
+            wi = getattr(emp, "employee_work_info", None)
+            if wi:
+                department = str(wi.department_id) if wi.department_id else ""
+                job_position = str(wi.job_position_id) if wi.job_position_id else ""
+        except Exception:
+            pass
+
+        previous_id = next_id = pk
+        requests_ids_json = request.GET.get("requests_ids")
+        if requests_ids_json:
+            try:
+                ids = [int(x) for x in requests_ids_json.split(",") if x.strip()]
+                previous_id, next_id = closest_numbers(ids, int(pk))
+            except (ValueError, TypeError):
+                pass
+
+        form_initial = dict(other_dict) if other_dict else {}
+        form_initial["request_description"] = attendance.request_description or ""
+        form_initial["employee_id"] = emp.id
+
+        return Response({
+            "id": attendance.id,
+            "employee_id": emp.id,
+            "employee_name": emp.get_full_name() or "",
+            "employee_profile_url": emp.get_avatar() if hasattr(emp, "get_avatar") else None,
+            "department": department,
+            "job_position": job_position,
+            "diff": diff,
+            "request_description": attendance.request_description or "",
+            "form_initial": form_initial,
+            "previous_id": previous_id,
+            "next_id": next_id,
+        }, status=200)
+
+
+def _can_access_attendance_request(request, attendance):
+    """Check if user can access an attendance request (view/add comment)."""
+    requests_qs = Attendance.objects.filter(id=attendance.id)
+    requests_qs = filtersubordinates(
+        request=request,
+        perm="attendance.view_attendance",
+        queryset=requests_qs,
+    )
+    requests_qs = requests_qs | Attendance.objects.filter(
+        id=attendance.id,
+        employee_id__employee_user_id=request.user,
+    )
+    return requests_qs.exists()
+
+
+class AttendanceRequestCommentsAPIView(APIView):
+    """
+    List and add comments for an attendance request.
+    GET: list comments
+    POST: add comment (body: { comment: "..." })
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        try:
+            attendance = Attendance.objects.get(id=pk)
+        except Attendance.DoesNotExist:
+            return Response({"error": "Attendance request not found"}, status=404)
+        if not _can_access_attendance_request(request, attendance):
+            return Response({"error": "Access denied"}, status=403)
+        comments = (
+            AttendanceRequestComment.objects.filter(request_id=pk)
+            .order_by("-created_at")
+        )
+        return Response(
+            {"results": AttendanceRequestCommentSerializer(comments, many=True).data},
+            status=200,
+        )
+
+    def post(self, request, pk):
+        try:
+            attendance = Attendance.objects.get(id=pk)
+        except Attendance.DoesNotExist:
+            return Response({"error": "Attendance request not found"}, status=404)
+        if not _can_access_attendance_request(request, attendance):
+            return Response({"error": "Access denied"}, status=403)
+        emp = getattr(request.user, "employee_get", None)
+        if not emp:
+            return Response({"error": "Employee profile required"}, status=400)
+        serializer = AttendanceRequestCommentCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        comment = AttendanceRequestComment()
+        comment.request_id = attendance
+        comment.employee_id = emp
+        comment.comment = serializer.validated_data.get("comment", "").strip()
+        comment.save()
+        return Response(
+            AttendanceRequestCommentSerializer(comment).data,
+            status=201,
+        )
+
+
+class AttendanceRequestCommentDeleteAPIView(APIView):
+    """Delete an attendance request comment."""
+
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, pk, comment_id):
+        try:
+            comment = AttendanceRequestComment.objects.get(
+                id=comment_id,
+                request_id=pk,
+            )
+        except AttendanceRequestComment.DoesNotExist:
+            return Response({"error": "Comment not found"}, status=404)
+        attendance = comment.request_id
+        if not _can_access_attendance_request(request, attendance):
+            return Response({"error": "Access denied"}, status=403)
+        emp = getattr(request.user, "employee_get", None)
+        if emp and comment.employee_id_id == emp.id:
+            pass
+        elif request.user.has_perm("attendance.delete_attendancerequestcomment"):
+            pass
+        else:
+            return Response({"error": "Cannot delete this comment"}, status=403)
+        comment.delete()
+        return Response(status=204)
 
 
 class AttendanceRequestApproveView(APIView):
@@ -801,6 +1187,53 @@ class BatchListAPIView(APIView):
         data = [{"id": b.id, "title": str(b.title) if b.title else f"Batch-{b.id}"} for b in batches]
         return Response(data, status=200)
 
+    @manager_permission_required("attendance.add_batchattendance")
+    def post(self, request):
+        title = (request.data.get("title") or "").strip()
+        if not title:
+            return Response({"error": "title is required"}, status=400)
+        batch = BatchAttendance.objects.create(title=title)
+        return Response({"id": batch.id, "title": str(batch.title)}, status=201)
+
+
+class BatchDetailAPIView(APIView):
+    """Update or delete a batch. PUT: update title. DELETE: delete batch."""
+
+    permission_classes = [IsAuthenticated]
+
+    def put(self, request, pk):
+        batch = BatchAttendance.objects.filter(id=pk).first()
+        if not batch:
+            return Response({"error": "Batch not found"}, status=404)
+        if not (
+            request.user.has_perm("attendance.change_attendancegeneralsettings")
+            or getattr(batch, "created_by_id", None) == getattr(request.user, "id", None)
+        ):
+            return Response({"error": "Permission denied"}, status=403)
+        title = (request.data.get("title") or "").strip()
+        if not title:
+            return Response({"error": "title is required"}, status=400)
+        batch.title = title
+        batch.save()
+        return Response({"id": batch.id, "title": str(batch.title)}, status=200)
+
+    @method_decorator(permission_required("attendance.delete_batchattendance"))
+    def delete(self, request, pk):
+        from django.db.models import ProtectedError
+
+        batch = BatchAttendance.objects.filter(id=pk).first()
+        if not batch:
+            return Response({"error": "Batch not found"}, status=404)
+        try:
+            batch_name = str(batch)
+            batch.delete()
+            return Response({"status": "deleted", "batch": batch_name}, status=200)
+        except ProtectedError as e:
+            return Response(
+                {"error": f"Batch is in use and cannot be deleted: {e}"},
+                status=400,
+            )
+
 
 class AttendanceRequestAddToBatchAPIView(APIView):
     """
@@ -861,12 +1294,25 @@ class AttendanceOverTimeView(APIView):
         permission_based_queryset = filtersubordinates(
             request, queryset, "attendance.view_attendanceovertime"
         )
-        queryset = permission_based_queryset | self_account
+        queryset = (permission_based_queryset | self_account).distinct()
         field_name = request.GET.get("groupby_field", None)
         if field_name:
             # groupby workflow
             url = request.build_absolute_uri()
             return groupby_queryset(request, url, field_name, queryset)
+
+        sortby = request.GET.get("sortby", "").strip()
+        valid_sort_fields = (
+            "employee_id__employee_first_name",
+            "month",
+            "year",
+            "hour_account_second",
+            "overtime_second",
+        )
+        if sortby:
+            order_field = sortby.lstrip("-")
+            if order_field in valid_sort_fields:
+                queryset = queryset.order_by(sortby)
 
         pagenation = PageNumberPagination()
         page = pagenation.paginate_queryset(queryset, request)
@@ -925,9 +1371,24 @@ class LateComeEarlyOutView(APIView):
         permission_based = filtersubordinates(
             request, filter_obj.qs, "attendance.view_attendancelatecomeearlyout", field="employee_id"
         )
-        queryset = (permission_based | self_reports).distinct().order_by(
-            "-attendance_id__attendance_date"
+        queryset = (permission_based | self_reports).distinct()
+        sortby = request.GET.get("sortby", "").strip()
+        valid_sort_fields = (
+            "employee_id__employee_first_name",
+            "type",
+            "attendance_id__attendance_date",
+            "attendance_id__attendance_clock_in_date",
+            "attendance_id__attendance_clock_out_date",
+            "attendance_id__at_work_second",
         )
+        if sortby:
+            order_field = sortby.lstrip("-")
+            if order_field in valid_sort_fields:
+                queryset = queryset.order_by(sortby)
+            else:
+                queryset = queryset.order_by("-attendance_id__attendance_date")
+        else:
+            queryset = queryset.order_by("-attendance_id__attendance_date")
         field_name = request.GET.get("groupby_field", None)
         if field_name:
             url = request.build_absolute_uri()
@@ -1154,7 +1615,22 @@ class AttendanceActivityView(APIView):
         permission_based = filtersubordinates(
             request, filter_obj.qs, "attendance.view_attendanceovertime", field="employee_id"
         )
-        queryset = (permission_based | self_activities).distinct().order_by("-pk")
+        queryset = (permission_based | self_activities).distinct()
+        orderby = request.GET.get("orderby", "").strip()
+        if orderby:
+            order_field = orderby.lstrip("-")
+            valid_order_fields = {
+                "employee_id__employee_first_name",
+                "attendance_date",
+                "clock_in_date",
+                "clock_out_date",
+            }
+            if order_field in valid_order_fields:
+                queryset = queryset.order_by(orderby)
+            else:
+                queryset = queryset.order_by("-pk")
+        else:
+            queryset = queryset.order_by("-pk")
         field_name = request.GET.get("groupby_field", None)
         if field_name:
             url = request.build_absolute_uri()
@@ -1204,6 +1680,122 @@ class AttendanceActivityBulkDeleteView(APIView):
         return Response({"deleted": count}, status=200)
 
 
+class AttendanceActivityExportColumnsAPIView(APIView):
+    """
+    Returns available Excel columns for attendance activity export.
+    GET /api/v1/attendance/attendance-activity-export-columns/
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        form = AttendanceActivityExportForm()
+        choices = form.fields["selected_fields"].choices
+        columns = [{"value": value, "label": str(label)} for value, label in choices]
+        return Response({"columns": columns}, status=200)
+
+
+class AttendanceActivityExportAPIView(APIView):
+    """
+    Export attendance activities to Excel.
+    GET with params: selected_fields (repeated), ids (optional JSON array for selected-only),
+    and any AttendanceActivityFilter params (employee_id, attendance_date_from, etc.).
+    Uses Django export_data logic when ids provided without selected_fields.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        django_request = request._request
+        # Ensure we bypass HX form render and go to export_data
+        django_request.META["HTTP_HX_REQUEST"] = "false"
+        from attendance.views.views import attendance_activity_export
+
+        response = attendance_activity_export(django_request)
+        return response
+
+
+class AttendanceActivityImportTemplateAPIView(APIView):
+    """
+    Download Excel template for attendance activity import.
+    GET /api/v1/attendance/attendance-activity-import-template/
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from django.http import HttpResponse
+
+        data_frame = pd.DataFrame(
+            columns=[
+                "Badge ID",
+                "Employee",
+                "Attendance Date",
+                "In Date",
+                "Check In",
+                "Check Out",
+                "Out Date",
+            ]
+        )
+        response = HttpResponse(
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        response["Content-Disposition"] = 'attachment; filename="activity_excel.xlsx"'
+        data_frame.to_excel(response, index=False)
+        return response
+
+
+class AttendanceActivityImportAPIView(APIView):
+    """
+    Import attendance activities from Excel.
+    POST with multipart/form-data, file field: activity_import
+    Returns: { created_count, error_count, error_file_base64? }
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from django.http import HttpResponse
+
+        if not request.user.has_perm("attendance.add_attendanceactivity"):
+            return Response({"detail": "Permission denied."}, status=403)
+        file_obj = request.FILES.get("activity_import")
+        if not file_obj:
+            return Response(
+                {"detail": "No file provided. Use field name 'activity_import'."},
+                status=400,
+            )
+        from attendance.views.views import process_activity_dicts
+
+        try:
+            data_frame = pd.read_excel(file_obj)
+        except Exception as e:
+            return Response(
+                {"detail": f"Invalid Excel file: {str(e)}"},
+                status=400,
+            )
+        activity_dicts = data_frame.to_dict("records")
+        if not activity_dicts:
+            return Response(
+                {"created_count": 0, "error_count": 0},
+                status=200,
+            )
+        import_error_dicts = process_activity_dicts(activity_dicts)
+        created_count = len(activity_dicts) - len(import_error_dicts)
+        error_count = len(import_error_dicts)
+        result = {"created_count": created_count, "error_count": error_count}
+        if import_error_dicts:
+            import base64
+
+            error_df = pd.DataFrame(import_error_dicts)
+            buffer = io.BytesIO()
+            error_df.to_excel(buffer, index=False)
+            buffer.seek(0)
+            result["error_file_base64"] = base64.b64encode(buffer.read()).decode("ascii")
+            result["error_filename"] = "ImportError.xlsx"
+        return Response(result, status=200)
+
+
 class TodayAttendance(APIView):
     """
     Provides the ratio of marked attendances to expected attendances for the current day.
@@ -1233,7 +1825,254 @@ class TodayAttendance(APIView):
             )
 
         return Response(
-            {"marked_attendances_ratio": marked_attendances_ratio}, status=200
+            {
+                "marked_attendances_ratio": marked_attendances_ratio,
+                "on_time": on_time,
+                "late_come": late_come_obj,
+                "marked_attendances": marked_attendances,
+                "expected_attendances": expected_attendances,
+            },
+            status=200,
+        )
+
+
+class DashboardSettingsView(APIView):
+    """
+    Returns attendance dashboard settings (e.g. late_come_early_out_tracking).
+    Used by frontend to show/hide Late Come card.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        tracking = TrackLateComeEarlyOut.objects.first()
+        enable = tracking.is_enable if tracking else True
+        return Response({"late_come_early_out_tracking": enable}, status=200)
+
+
+class DashboardAttendanceChartView(APIView):
+    """
+    Returns chart data for Attendance Analytic (On Time / Late Come / Early Out by department).
+    Params: date (YYYY-MM-DD), type (day|weekly|monthly|date_range), end_date (for date_range).
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from django.utils.translation import gettext_lazy as _
+
+        labels = [_("On Time"), _("Late Come"), _("Early Out")]
+        start_date = request.GET.get("date") or date.today()
+        if isinstance(start_date, str):
+            try:
+                start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
+            except ValueError:
+                start_date = date.today()
+        end_date = request.GET.get("end_date") or start_date
+        if isinstance(end_date, str):
+            try:
+                end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
+            except ValueError:
+                end_date = start_date
+        chart_type = request.GET.get("type") or "day"
+        data_set = []
+        for dept in Department.objects.all():
+            data_set.append(
+                generate_data_set(
+                    request, start_date, chart_type, end_date, dept
+                )
+            )
+        data_set = list(filter(None, data_set))
+        message = _("No records available at the moment.")
+        return Response(
+            {"dataSet": data_set, "labels": labels, "message": message},
+            status=200,
+        )
+
+
+class PendingHoursChartView(APIView):
+    """
+    Returns chart data for Hours Chart (pending hours / worked hours by department).
+    Params: month (1-12 or YYYY-MM), year.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        month_param = request.GET.get("month")
+        year_param = request.GET.get("year")
+        if month_param and "-" in str(month_param):
+            try:
+                y, m = str(month_param).split("-")[:2]
+                year_param = year_param or y
+                month_param = int(m)
+            except (ValueError, TypeError):
+                pass
+        if not year_param:
+            year_param = date.today().year
+        if not month_param:
+            month_param = date.today().month
+        try:
+            year = int(year_param)
+            month = int(month_param)
+        except (TypeError, ValueError):
+            year = date.today().year
+            month = date.today().month
+        month_names = [
+            "January", "February", "March", "April", "May", "June",
+            "July", "August", "September", "October", "November", "December",
+        ]
+        month_name = month_names[month - 1] if 1 <= month <= 12 else month_names[date.today().month - 1]
+        get_data = query_dict({"month": month_name, "year": year})
+        records = AttendanceOverTimeFilter(get_data).qs
+        labels = list(Department.objects.values_list("department", flat=True))
+        data = {
+            "labels": labels,
+            "datasets": [
+                pending_hour_data(labels, records),
+                worked_hour_data(labels, records),
+            ],
+        }
+        return Response({"data": data}, status=200)
+
+
+class OnBreakEmployeesView(APIView):
+    """
+    Returns list of employees currently on break (early_out today).
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from attendance.models import AttendanceLateComeEarlyOut
+
+        today = date.today()
+        early_outs = AttendanceLateComeEarlyOut.objects.filter(
+            type="early_out",
+            attendance_id__attendance_date=today,
+        ).select_related("employee_id", "attendance_id")
+        results = []
+        for obj in early_outs:
+            emp = obj.employee_id
+            results.append({
+                "id": obj.id,
+                "employee_id": emp.id if emp else None,
+                "employee_first_name": getattr(emp, "employee_first_name", "") or "",
+                "employee_last_name": getattr(emp, "employee_last_name", "") or "",
+                "attendance_date": obj.attendance_id.attendance_date.strftime("%Y-%m-%d") if obj.attendance_id else None,
+            })
+        return Response({"results": results}, status=200)
+
+
+class OvertimeToApproveListView(APIView):
+    """
+    Paginated list of attendances with overtime to approve (validated, not yet approved).
+    Same filter as dashboard_approve_overtimes.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        condition = AttendanceValidationCondition.objects.first()
+        min_ot = strtime_seconds("00:00")
+        if condition is not None and condition.minimum_overtime_to_approve is not None:
+            min_ot = strtime_seconds(condition.minimum_overtime_to_approve)
+        ot_attendances = Attendance.objects.filter(
+            overtime_second__gte=min_ot,
+            attendance_validated=True,
+            employee_id__is_active=True,
+            attendance_overtime_approve=False,
+        )
+        ot_attendances = filtersubordinates(
+            request=request,
+            perm="attendance.change_overtime",
+            queryset=ot_attendances,
+        )
+        paginator = PageNumberPagination()
+        paginator.page_size = int(request.GET.get("page_size") or 10)
+        page = paginator.paginate_queryset(ot_attendances, request)
+        serializer = AttendanceSerializer(page, many=True)
+        return paginator.get_paginated_response(serializer.data)
+
+
+class DepartmentOvertimeChartView(APIView):
+    """
+    Returns chart data for Department Overtime Chart (approved OT by department).
+    Params: date, type (day|weekly|monthly|date_range), end_date.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from django.utils.translation import gettext_lazy as _
+        from horilla import settings as horilla_settings
+
+        start_date = request.GET.get("date") or date.today()
+        if isinstance(start_date, str):
+            try:
+                start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
+            except ValueError:
+                start_date = date.today()
+        chart_type = request.GET.get("type") or "day"
+        end_date = request.GET.get("end_date") or start_date
+        if isinstance(end_date, str):
+            try:
+                end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
+            except ValueError:
+                end_date = start_date
+        if chart_type == "day":
+            pass
+        elif chart_type == "weekly":
+            start_date, end_date = get_week_start_end_dates(start_date)
+        elif chart_type == "monthly":
+            start_date, end_date = get_month_start_end_dates(start_date)
+        elif chart_type == "date_range":
+            start_date = start_date
+            end_date = end_date
+        attendance_qs = total_attendance(
+            start_date=start_date, department=None, end_date=end_date
+        )
+        condition = AttendanceValidationCondition.objects.first()
+        min_ot = strtime_seconds("00:00")
+        if condition is not None and condition.minimum_overtime_to_approve is not None:
+            min_ot = strtime_seconds(condition.minimum_overtime_to_approve)
+        attendances = attendance_qs.filter(
+            overtime_second__gte=min_ot,
+            attendance_validated=True,
+            employee_id__is_active=True,
+            attendance_overtime_approve=True,
+        )
+        departments = []
+        department_total = []
+        for att in attendances:
+            if (
+                att.employee_id
+                and getattr(att.employee_id, "employee_work_info", None)
+                and getattr(att.employee_id.employee_work_info, "department_id", None)
+            ):
+                dept_name = att.employee_id.employee_work_info.department_id.department
+                if dept_name not in departments:
+                    departments.append(dept_name)
+                    department_total.append({"department": dept_name, "ot_hours": 0})
+        for att in attendances:
+            if getattr(att.employee_id, "employee_work_info", None) and att.employee_id.employee_work_info.department_id:
+                department = att.employee_id.employee_work_info.department_id.department
+                ot_hrs = (att.approved_overtime_second or 0) / 3600
+                for d in department_total:
+                    if d["department"] == department:
+                        d["ot_hours"] += ot_hrs
+                        break
+        dataset = [{"label": "", "data": [d["ot_hours"] for d in department_total]}]
+        static_url = getattr(horilla_settings, "STATIC_URL", "/static/")
+        return Response(
+            {
+                "dataset": dataset,
+                "labels": departments,
+                "department_total": department_total,
+                "message": _("No validated Overtimes were found"),
+                "emptyImageSrc": f"/{static_url}images/ui/overtime-icon.png",
+            },
+            status=200,
         )
 
 
@@ -1693,6 +2532,10 @@ class ConvertedMailTemplateConvert(APIView):
         employee_id = request.data.get("employee_id", None)
         employee = Employee.objects.filter(id=employee_id).first()
         bdy = HorillaMailTemplate.objects.filter(id=template_id).first()
+        if not bdy:
+            return Response({"error": "Template not found"}, status=404)
+        if not employee:
+            return Response({"error": "Employee not found"}, status=404)
         template_bdy = template.Template(bdy.body)
         context = template.Context(
             {"instance": employee, "self": request.user.employee_get}
