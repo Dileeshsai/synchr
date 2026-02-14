@@ -4,6 +4,7 @@ from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes, force_str
 from django.conf import settings
+from django.db.models import Q
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated, AllowAny
@@ -200,6 +201,29 @@ class PermissionsListView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        search = (request.query_params.get("search") or "").strip()
+        page = int(request.query_params.get("page", 1))
+        page_size = min(int(request.query_params.get("page_size", 50)), 200)
+        
         perms = Permission.objects.all().select_related('content_type').order_by('content_type__app_label', 'codename')
-        data = [{"id": p.id, "codename": p.codename, "name": p.name or p.codename} for p in perms]
-        return Response(data)
+        
+        # Apply search filter
+        if search:
+            perms = perms.filter(
+                Q(codename__icontains=search) | Q(name__icontains=search)
+            )
+        
+        total_count = perms.count()
+        start = (page - 1) * page_size
+        end = start + page_size
+        paginated = perms[start:end]
+        
+        data = [{"id": p.id, "codename": p.codename, "name": p.name or p.codename} for p in paginated]
+        
+        return Response({
+            "results": data,
+            "count": total_count,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": (total_count + page_size - 1) // page_size if page_size > 0 else 1,
+        })

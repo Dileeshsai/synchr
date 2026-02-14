@@ -351,7 +351,18 @@ class LeaveTypeGetCreateSerilaizer(serializers.ModelSerializer):
 class LeaveTypeAllGetSerializer(serializers.ModelSerializer):
     class Meta:
         model = LeaveType
-        fields = ["id", "name", "icon"]
+        # Used by /api/v1/leave/leave-types/ list endpoint.
+        # Frontend "Leave Types" table requires these columns.
+        fields = [
+            "id",
+            "name",
+            "icon",
+            "color",
+            "payment",
+            "total_days",
+            "require_attachment",
+            "require_approval",
+        ]
 
 
 class LeaveAllocationRequestCreateSerializer(serializers.ModelSerializer):
