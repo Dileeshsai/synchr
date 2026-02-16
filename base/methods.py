@@ -566,8 +566,13 @@ def export_data(request, model, form_class, filter_class, file_name, perm=None):
     if not selected_fields:
         selected_fields = form.fields["selected_fields"].initial
         ids = request.GET.get("ids")
-        id_list = json.loads(ids)
-        export_objects = model.objects.filter(id__in=id_list)
+        if ids:
+            try:
+                id_list = json.loads(ids)
+                export_objects = model.objects.filter(id__in=id_list)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        # else: keep export_objects from filter_class(request.GET).qs above
 
     for field in form.fields["selected_fields"].choices:
         value = field[0]

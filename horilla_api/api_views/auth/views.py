@@ -73,6 +73,8 @@ class LoginAPIView(APIView):
                 emp_data["is_superuser"] = user.is_superuser
                 emp_data["is_staff"] = user.is_staff
                 emp_data["permissions"] = list(user.get_all_permissions()) if not user.is_superuser else []
+                # Direct (user-only) permissions: used by frontend for Settings > Employee Permissions gating (e.g. companies)
+                emp_data["direct_permissions"] = list(user.get_user_permissions()) if not user.is_superuser else []
                 result = {
                     "employee": emp_data,
                     "access": str(refresh.access_token),
@@ -195,6 +197,14 @@ class UserProfileAPIView(APIView):
         data["is_superuser"] = user.is_superuser
         data["is_staff"] = user.is_staff
         data["permissions"] = list(user.get_all_permissions()) if not user.is_superuser else []
+        # Direct (user-only) permissions: used by frontend for Settings > Employee Permissions gating (e.g. companies)
+        data["direct_permissions"] = list(user.get_user_permissions()) if not user.is_superuser else []
+        # Logged-in user's company (for defaulting create-employee company when user is employee)
+        try:
+            company = employee.get_company()
+            data["company_id"] = company.id if company else None
+        except Exception:
+            data["company_id"] = None
         return Response(data)
 
 

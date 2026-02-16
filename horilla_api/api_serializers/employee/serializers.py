@@ -1,3 +1,5 @@
+from django.db import IntegrityError
+
 from rest_framework import serializers
 
 from base.models import Department, EmployeeType, JobPosition
@@ -12,7 +14,7 @@ from employee.models import (
 )
 from horilla_documents.models import Document, DocumentRequest
 
-from ...api_methods.employee.methods import get_next_badge_id
+from ...api_methods.employee.methods import get_next_available_badge_id, get_next_badge_id
 
 
 class ActiontypeSerializer(serializers.ModelSerializer):
@@ -67,6 +69,9 @@ class EmployeeSerializer(serializers.ModelSerializer):
     employee_bank_details_id = serializers.CharField(
         source="employee_bank_details.id", read_only=True
     )
+    company_id = serializers.CharField(
+        source="employee_work_info.company_id.id", read_only=True
+    )
 
     class Meta:
         model = Employee
@@ -74,7 +79,18 @@ class EmployeeSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         validated_data["badge_id"] = get_next_badge_id()
-        return super().create(validated_data)
+        try:
+            return super().create(validated_data)
+        except IntegrityError as e:
+            if "unique_badge_id" in str(e) or "badge_id" in str(e).lower():
+                validated_data["badge_id"] = get_next_available_badge_id()
+                try:
+                    return super().create(validated_data)
+                except IntegrityError:
+                    raise serializers.ValidationError(
+                        {"badge_id": ["This badge ID is already in use. Please try again."]}
+                    ) from e
+            raise
 
 
 class EmployeeWorkInformationSerializer(serializers.ModelSerializer):

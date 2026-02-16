@@ -1613,6 +1613,17 @@ class DocumentRequestAPIView(APIView):
             return Response(serializer.data)
         else:
             document_requests = DocumentRequest.objects.all()
+
+            # Apply company filter from query parameter if provided (for frontend filtering)
+            # HorillaCompanyManager should already filter by session, but query param ensures it works
+            company_id = request.GET.get("employee_id__employee_work_info__company_id") or request.GET.get("companyId")
+            if company_id:
+                from django.db.models import Q
+                # Filter document requests where at least one assigned employee belongs to the company
+                document_requests = document_requests.filter(
+                    employee_id__employee_work_info__company_id=company_id
+                ).distinct()
+
             pagination = PageNumberPagination()
             page = pagination.paginate_queryset(document_requests, request)
             serializer = DocumentRequestSerializer(page, many=True)

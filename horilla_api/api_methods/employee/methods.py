@@ -2,7 +2,33 @@ import re
 
 from base.methods import eval_validate
 from base.models import *
-from employee.models import *
+from employee.models import Employee
+
+
+def get_next_available_badge_id():
+    """
+    Return a badge_id that does not exist in the DB (uses entire() to see all companies).
+    Used as fallback when get_next_badge_id() produces a duplicate (e.g. company filter or race).
+    """
+    from base.context_processors import get_initial_prefix
+    prefix = get_initial_prefix(None)["get_initial_prefix"] or "PEP"
+    # Use entire() so we see all employees across companies (badge_id must be globally unique)
+    qs = getattr(Employee.objects, "entire", lambda: Employee.objects.all())()
+    existing = (
+        qs.exclude(badge_id__isnull=True)
+        .exclude(badge_id="")
+        .filter(badge_id__istartswith=prefix)
+        .values_list("badge_id", flat=True)
+    )
+    max_num = 0
+    for bid in existing:
+        digits = "".join(c for c in str(bid) if c.isdigit())
+        if digits:
+            try:
+                max_num = max(max_num, int(digits))
+            except ValueError:
+                pass
+    return f"{prefix}{max_num + 1:04d}"
 
 
 def get_next_badge_id():
