@@ -38,6 +38,8 @@ urlpatterns = [
     path("company-leave/<int:pk>/", CompanyLeaveGetUpdateDeleteAPIView.as_view()),
     path("holiday/", HolidayGetCreateAPIView.as_view()),
     path("holiday/<int:pk>/", HolidayGetUpdateDeleteAPIView.as_view()),
+    path("restrict-leave/", RestrictLeaveGetCreateAPIView.as_view()),
+    path("restrict-leave/<int:pk>/", RestrictLeaveGetUpdateDeleteAPIView.as_view()),
     path("approve/<int:pk>/", LeaveRequestApproveAPIView.as_view(),name="leave-approve"),
     path("reject/<int:pk>/", LeaveRequestRejectAPIView.as_view(),name="leave-reject"),
     path("interview-conflicts/", InterviewConflictsAPIView.as_view()),

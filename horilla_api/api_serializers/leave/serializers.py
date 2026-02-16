@@ -585,6 +585,33 @@ class HoildaySerializer(serializers.ModelSerializer):
         return data
 
 
+class RestrictLeaveSerializer(serializers.ModelSerializer):
+    job_position = serializers.PrimaryKeyRelatedField(many=True, queryset=None, required=False, allow_null=True)
+    spesific_leave_types = serializers.PrimaryKeyRelatedField(many=True, queryset=None, required=False, allow_null=True)
+    exclued_leave_types = serializers.PrimaryKeyRelatedField(many=True, queryset=None, required=False, allow_null=True)
+
+    class Meta:
+        model = RestrictLeave
+        exclude = ["company_id"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from base.models import JobPosition
+        from leave.models import LeaveType
+        self.fields['job_position'].queryset = JobPosition.objects.all()
+        self.fields['spesific_leave_types'].queryset = LeaveType.objects.all()
+        self.fields['exclued_leave_types'].queryset = LeaveType.objects.all()
+
+    def validate(self, data):
+        start_date = data.get("start_date")
+        end_date = data.get("end_date")
+        if start_date and end_date and end_date < start_date:
+            raise serializers.ValidationError(
+                {"end_date": ["End date should not be earlier than the start date."]}
+            )
+        return data
+
+
 class LeaveRequestApproveSerializer(serializers.ModelSerializer):
 
     class Meta:

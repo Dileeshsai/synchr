@@ -2,6 +2,7 @@ from django.urls import include, path
 
 urlpatterns = [
     path("auth/", include("horilla_api.api_urls.auth.urls")),
+    path("dashboard/", include("horilla_api.api_urls.dashboard.urls")),
     path("asset/", include("horilla_api.api_urls.asset.urls")),
     path("base/", include("horilla_api.api_urls.base.urls")),
     path("employee/", include("horilla_api.api_urls.employee.urls")),
@@ -17,4 +18,5 @@ urlpatterns = [
     path("helpdesk/", include("horilla_api.api_urls.helpdesk.urls")),
     path("project/", include("horilla_api.api_urls.project.urls")),
     path("geofencing/", include("horilla_api.api_urls.geofencing.urls")),
+    path("mail-automations/", include("horilla_api.api_urls.horilla_automations.urls")),
 ]

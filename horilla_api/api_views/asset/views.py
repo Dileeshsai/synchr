@@ -8,7 +8,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from asset.filters import AssetFilter
+from asset.filters import AssetFilter, AssetRequestFilter
 from asset.models import *
 
 from ...api_filters.asset.filters import AssetCategoryFilter
@@ -200,8 +200,9 @@ class AssetRequestAPIView(APIView):
             serializer = AssetRequestGetSerializer(asset_request)
             return Response(serializer.data)
         paginator = PageNumberPagination()
-        assets = AssetRequest.objects.all().order_by("-id")
-        page = paginator.paginate_queryset(assets, request)
+        queryset = AssetRequest.objects.all().order_by("-id")
+        filterset = AssetRequestFilter(request.GET, queryset=queryset)
+        page = paginator.paginate_queryset(filterset.qs, request)
         serializer = AssetRequestGetSerializer(page, many=True)
         return paginator.get_paginated_response(serializer.data)
 

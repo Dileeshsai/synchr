@@ -2425,6 +2425,54 @@ class OfflineEmployeesListView(APIView):
         return employees_with_leave_status
 
 
+class OnlineEmployeesCountView(APIView):
+    """
+    Count of active employees who have clocked in today but not yet clocked out.
+    Mirrors backend not-out-yet (Online Employees) tile.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        count = (
+            EmployeeFilter({"not_out_yet": date.today()})
+            .qs.exclude(employee_work_info__isnull=True)
+            .filter(is_active=True)
+            .distinct()
+            .count()
+        )
+        return Response({"count": count}, status=200)
+
+
+class OnlineEmployeesListView(APIView):
+    """
+    List of active employees who have clocked in today but not yet clocked out.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        queryset = (
+            EmployeeFilter({"not_out_yet": date.today()})
+            .qs.exclude(employee_work_info__isnull=True)
+            .filter(is_active=True)
+            .distinct()
+            .values(
+                "id",
+                "employee_first_name",
+                "employee_last_name",
+                "employee_profile",
+                "badge_id",
+            )
+        )
+        pagination = PageNumberPagination()
+        page = pagination.paginate_queryset(list(queryset), request)
+        for emp in page or []:
+            if emp.get("employee_profile"):
+                emp["employee_profile"] = settings.MEDIA_URL + emp["employee_profile"]
+        return pagination.get_paginated_response(page or [])
+
+
 class CheckingStatus(APIView):
     """
     Checks and provides the current attendance status for the authenticated user.

@@ -19,7 +19,7 @@ from horilla_api.api_serializers.leave.serializers import *
 from leave.filters import *
 from leave.forms import AvailableLeaveColumnExportForm
 from leave.methods import filter_conditional_leave_request
-from leave.models import AvailableLeave, LeaveRequest, LeaveType, LeaverequestComment, LeaverequestFile
+from leave.models import AvailableLeave, LeaveRequest, LeaveType, LeaverequestComment, LeaverequestFile, RestrictLeave
 from leave.threading import LeaveMailSendThread
 from notifications.signals import notify
 
@@ -828,6 +828,69 @@ class HolidayGetUpdateDeleteAPIView(APIView):
     def delete(self, request, pk):
         holiday = self.get_holiday(pk)
         holiday.delete()
+        return Response(status=200)
+
+
+class RestrictLeaveGetCreateAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @method_decorator(
+        permission_required("leave.view_restrictleave", raise_exception=True), name="dispatch"
+    )
+    def get(self, request):
+        restrict_leave = RestrictLeave.objects.all().order_by("-id")
+        paginator = PageNumberPagination()
+        page = paginator.paginate_queryset(restrict_leave, request)
+        serializer = RestrictLeaveSerializer(page, many=True)
+        return paginator.get_paginated_response(serializer.data)
+
+    @method_decorator(
+        permission_required("leave.add_restrictleave", raise_exception=True), name="dispatch"
+    )
+    def post(self, request):
+        serializer = RestrictLeaveSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=201)
+        return Response(serializer.errors, status=400)
+
+
+class RestrictLeaveGetUpdateDeleteAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get_restrict_leave(self, pk):
+        try:
+            return RestrictLeave.objects.get(pk=pk)
+        except RestrictLeave.DoesNotExist as e:
+            raise serializers.ValidationError(e)
+
+    @method_decorator(
+        permission_required("leave.view_restrictleave", raise_exception=True), name="dispatch"
+    )
+    def get(self, request, pk):
+        restrict_leave = self.get_restrict_leave(pk)
+        serializer = RestrictLeaveSerializer(restrict_leave)
+        return Response(serializer.data, status=200)
+
+    @method_decorator(
+        permission_required("leave.change_restrictleave", raise_exception=True),
+        name="dispatch",
+    )
+    def put(self, request, pk):
+        restrict_leave = self.get_restrict_leave(pk)
+        serializer = RestrictLeaveSerializer(restrict_leave, data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=200)
+        return Response(serializer.errors, status=400)
+
+    @method_decorator(
+        permission_required("leave.delete_restrictleave", raise_exception=True),
+        name="dispatch",
+    )
+    def delete(self, request, pk):
+        restrict_leave = self.get_restrict_leave(pk)
+        restrict_leave.delete()
         return Response(status=200)
 
 

@@ -12,8 +12,11 @@ from base.models import (
     EmployeeShift,
     EmployeeShiftDay,
     EmployeeShiftSchedule,
+    HorillaMailTemplate,
     JobPosition,
     JobRole,
+    MultipleApprovalCondition,
+    MultipleApprovalManagers,
     RotatingShift,
     RotatingShiftAssign,
     RotatingWorkType,
@@ -578,3 +581,167 @@ class ShiftRequestSerializer(serializers.ModelSerializer):
     class Meta:
         model = ShiftRequest
         fields = "__all__"
+
+
+class MultipleApprovalManagersSerializer(serializers.ModelSerializer):
+    """Serializer for approval managers within a condition."""
+
+    manager_display = serializers.SerializerMethodField()
+
+    class Meta:
+        model = MultipleApprovalManagers
+        fields = ["id", "sequence", "employee_id", "reporting_manager", "manager_display"]
+        read_only_fields = ["id"]
+
+    def get_manager_display(self, obj):
+        if obj.employee_id:
+            from employee.models import Employee
+            try:
+                emp = Employee.objects.get(id=obj.employee_id)
+                return str(emp)
+            except Employee.DoesNotExist:
+                return ""
+        if obj.reporting_manager == "reporting_manager_id":
+            return "Reporting Manager"
+        return obj.reporting_manager or ""
+
+
+class MultipleApprovalManagersWriteSerializer(serializers.Serializer):
+    """Write serializer for approval managers (nested in create/update)."""
+
+    employee_id = serializers.IntegerField(allow_null=True, required=False)
+    reporting_manager = serializers.CharField(allow_null=True, allow_blank=True, required=False)
+
+    def validate(self, attrs):
+        has_employee = attrs.get("employee_id") is not None
+        has_reporting = attrs.get("reporting_manager")
+        if not has_employee and not has_reporting:
+            raise serializers.ValidationError(
+                "Either employee_id or reporting_manager must be provided."
+            )
+        if has_employee and has_reporting:
+            raise serializers.ValidationError(
+                "Provide either employee_id or reporting_manager, not both."
+            )
+        if has_reporting and attrs["reporting_manager"] != "reporting_manager_id":
+            attrs["reporting_manager"] = "reporting_manager_id"
+        return attrs
+
+
+class MultipleApprovalConditionSerializer(serializers.ModelSerializer):
+    """Serializer for Multiple Approval Condition with nested approval managers."""
+
+    approval_managers = serializers.SerializerMethodField()
+
+    def get_approval_managers(self, obj):
+        managers = MultipleApprovalManagers.objects.filter(
+            condition_id=obj
+        ).order_by("sequence")
+        return MultipleApprovalManagersSerializer(managers, many=True).data
+    department_name = serializers.CharField(source="department.department", read_only=True)
+    company_name = serializers.CharField(
+        source="company_id.company", read_only=True, allow_null=True
+    )
+    condition_field_display = serializers.CharField(
+        source="get_condition_field_display", read_only=True, allow_null=True
+    )
+    condition_operator_display = serializers.CharField(
+        source="get_condition_operator_display", read_only=True, allow_null=True
+    )
+
+    class Meta:
+        model = MultipleApprovalCondition
+        fields = [
+            "id",
+            "department",
+            "department_name",
+            "condition_field",
+            "condition_field_display",
+            "condition_operator",
+            "condition_operator_display",
+            "condition_value",
+            "condition_start_value",
+            "condition_end_value",
+            "company_id",
+            "company_name",
+            "approval_managers",
+        ]
+
+    def validate(self, attrs):
+        instance = MultipleApprovalCondition(**attrs)
+        try:
+            instance.clean()
+        except DjangoValidationError as e:
+            if hasattr(e, "message_dict") and e.message_dict:
+                raise serializers.ValidationError(e.message_dict)
+            raise serializers.ValidationError({"non_field_errors": [str(e)]})
+        return attrs
+
+    def create(self, validated_data):
+        approval_managers_data = self.context.get("approval_managers", [])
+        if not approval_managers_data:
+            raise serializers.ValidationError(
+                {"approval_managers": "At least one approval manager is required."}
+            )
+        instance = MultipleApprovalCondition.objects.create(**validated_data)
+        for seq, manager_data in enumerate(approval_managers_data, start=1):
+            emp_id = manager_data.get("employee_id")
+            reporting = manager_data.get("reporting_manager")
+            if emp_id is not None:
+                MultipleApprovalManagers.objects.create(
+                    condition_id=instance,
+                    sequence=seq,
+                    employee_id=emp_id,
+                    reporting_manager=None,
+                )
+            else:
+                MultipleApprovalManagers.objects.create(
+                    condition_id=instance,
+                    sequence=seq,
+                    employee_id=None,
+                    reporting_manager=reporting or "reporting_manager_id",
+                )
+        return instance
+
+    def update(self, instance, validated_data):
+        approval_managers_data = self.context.get("approval_managers")
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.clean()
+        instance.save()
+        if approval_managers_data is not None:
+            MultipleApprovalManagers.objects.filter(condition_id=instance).delete()
+            if not approval_managers_data:
+                raise serializers.ValidationError(
+                    {"approval_managers": "At least one approval manager is required."}
+                )
+            for seq, manager_data in enumerate(approval_managers_data, start=1):
+                emp_id = manager_data.get("employee_id")
+                reporting = manager_data.get("reporting_manager")
+                if emp_id is not None:
+                    MultipleApprovalManagers.objects.create(
+                        condition_id=instance,
+                        sequence=seq,
+                        employee_id=emp_id,
+                        reporting_manager=None,
+                    )
+                else:
+                    MultipleApprovalManagers.objects.create(
+                        condition_id=instance,
+                        sequence=seq,
+                        employee_id=None,
+                        reporting_manager=reporting or "reporting_manager_id",
+                    )
+        return instance
+
+
+class HorillaMailTemplateSerializer(serializers.ModelSerializer):
+    """Serializer for Mail Templates (HorillaMailTemplate)."""
+
+    company_name = serializers.CharField(
+        source="company_id.company", read_only=True, allow_null=True
+    )
+
+    class Meta:
+        model = HorillaMailTemplate
+        fields = ["id", "title", "body", "company_id", "company_name"]

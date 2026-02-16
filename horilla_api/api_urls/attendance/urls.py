@@ -146,6 +146,8 @@ urlpatterns = [
     path("work-record-export/", WorkRecordExportAPIView.as_view(), name="api-work-record-export"),
     path("offline-employees/count/", OfflineEmployeesCountView.as_view(), name="api-"),
     path("offline-employees/list/", OfflineEmployeesListView.as_view(), name="api-"),
+    path("online-employees/count/", OnlineEmployeesCountView.as_view(), name="api-"),
+    path("online-employees/list/", OnlineEmployeesListView.as_view(), name="api-"),
     path("permission-check/attendance", AttendancePermissionCheck.as_view()),
     path("checking-in", CheckingStatus.as_view()),
     path("checking-out", CheckingStatus.as_view()),

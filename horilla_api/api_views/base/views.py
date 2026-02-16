@@ -13,7 +13,10 @@ from base.filters import (
     ShiftRequestFilter,
     WorkTypeRequestFilter,
 )
+from base.forms import MailTemplateForm
 from base.models import (
+    FIELD_CHOICE,
+    CONDITION_CHOICE,
     AttendanceAllowedIP,
     BiometricAttendance,
     Company,
@@ -21,8 +24,10 @@ from base.models import (
     EmployeeShift,
     EmployeeShiftDay,
     EmployeeShiftSchedule,
+    HorillaMailTemplate,
     JobPosition,
     JobRole,
+    MultipleApprovalCondition,
     RotatingShift,
     RotatingShiftAssign,
     RotatingWorkType,
@@ -56,8 +61,10 @@ from ...api_serializers.base.serializers import (
     EmployeeShiftDaySerializer,
     EmployeeShiftScheduleSerializer,
     EmployeeShiftSerializer,
+    HorillaMailTemplateSerializer,
     JobPositionSerializer,
     JobRoleSerializer,
+    MultipleApprovalConditionSerializer,
     RotatingShiftAssignSerializer,
     RotatingShiftSerializer,
     RotatingWorkTypeAssignSerializer,
@@ -295,6 +302,184 @@ class CompanyView(APIView):
             return Response({"error": "Company not found "}, status=400)
         response, status_code = object_delete(Company, pk)
         return Response(response, status=status_code)
+
+
+class MultipleApprovalConditionView(APIView):
+    serializer_class = MultipleApprovalConditionSerializer
+    permission_classes = [IsAuthenticated]
+
+    def _get_queryset(self, request):
+        queryset = MultipleApprovalCondition.objects.all().order_by("-department")
+        company_id = request.query_params.get("company_id")
+        if company_id and str(company_id).lower() != "all":
+            queryset = queryset.filter(company_id=company_id)
+        return queryset
+
+    @method_decorator(permission_required("base.view_multipleapprovalcondition"), name="dispatch")
+    def get(self, request, pk=None):
+        if pk:
+            condition = object_check(MultipleApprovalCondition, pk)
+            if condition is None:
+                return Response({"error": "Multiple approval condition not found"}, status=404)
+            serializer = self.serializer_class(condition)
+            return Response(serializer.data, status=200)
+
+        queryset = self._get_queryset(request)
+        paginator = PageNumberPagination()
+        page = paginator.paginate_queryset(queryset, request)
+        serializer = self.serializer_class(page, many=True)
+        return paginator.get_paginated_response(serializer.data)
+
+    @method_decorator(permission_required("base.add_multipleapprovalcondition"), name="dispatch")
+    def post(self, request):
+        data = request.data.copy()
+        approval_managers = data.pop("approval_managers", [])
+        context = {"approval_managers": approval_managers}
+        serializer = self.serializer_class(data=data, context=context)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=201)
+        return Response(serializer.errors, status=400)
+
+    @method_decorator(permission_required("base.change_multipleapprovalcondition"), name="dispatch")
+    def put(self, request, pk):
+        condition = object_check(MultipleApprovalCondition, pk)
+        if condition is None:
+            return Response({"error": "Multiple approval condition not found"}, status=404)
+        data = request.data.copy()
+        approval_managers = data.pop("approval_managers", None)
+        context = {"approval_managers": approval_managers}
+        serializer = self.serializer_class(condition, data=data, context=context, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=200)
+        return Response(serializer.errors, status=400)
+
+    @method_decorator(permission_required("base.delete_multipleapprovalcondition"), name="dispatch")
+    def delete(self, request, pk):
+        condition = object_check(MultipleApprovalCondition, pk)
+        if condition is None:
+            return Response({"error": "Multiple approval condition not found"}, status=404)
+        response, status_code = object_delete(MultipleApprovalCondition, pk)
+        return Response(response, status=status_code)
+
+
+class MultipleApprovalConditionOptionsView(APIView):
+    """Returns field and operator choices for multiple approval condition forms."""
+
+    permission_classes = [IsAuthenticated]
+
+    @method_decorator(permission_required("base.view_multipleapprovalcondition"), name="dispatch")
+    def get(self, request):
+        return Response({
+            "condition_fields": [{"value": v, "label": str(l)} for v, l in FIELD_CHOICE if v],
+            "condition_operators": [{"value": v, "label": str(l)} for v, l in CONDITION_CHOICE],
+        }, status=200)
+
+
+class MailTemplateView(APIView):
+    serializer_class = HorillaMailTemplateSerializer
+    permission_classes = [IsAuthenticated]
+
+    def _get_queryset(self, request):
+        queryset = HorillaMailTemplate.objects.all().order_by("title")
+        company_id = request.query_params.get("company_id")
+        if company_id and str(company_id).lower() != "all":
+            queryset = queryset.filter(company_id=company_id)
+        return queryset
+
+    @method_decorator(permission_required("base.view_horillamailtemplate"), name="dispatch")
+    def get(self, request, pk=None):
+        if pk:
+            template = object_check(HorillaMailTemplate, pk)
+            if template is None:
+                return Response({"error": "Mail template not found"}, status=404)
+            serializer = self.serializer_class(template)
+            return Response(serializer.data, status=200)
+
+        queryset = self._get_queryset(request)
+        paginator = PageNumberPagination()
+        page = paginator.paginate_queryset(queryset, request)
+        serializer = self.serializer_class(page, many=True)
+        return paginator.get_paginated_response(serializer.data)
+
+    @method_decorator(permission_required("base.add_horillamailtemplate"), name="dispatch")
+    def post(self, request):
+        serializer = self.serializer_class(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=201)
+        return Response(serializer.errors, status=400)
+
+    @method_decorator(permission_required("base.change_horillamailtemplate"), name="dispatch")
+    def put(self, request, pk):
+        template = object_check(HorillaMailTemplate, pk)
+        if template is None:
+            return Response({"error": "Mail template not found"}, status=404)
+        serializer = self.serializer_class(template, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=200)
+        return Response(serializer.errors, status=400)
+
+    @method_decorator(permission_required("base.delete_horillamailtemplate"), name="dispatch")
+    def delete(self, request, pk):
+        template = object_check(HorillaMailTemplate, pk)
+        if template is None:
+            return Response({"error": "Mail template not found"}, status=404)
+        response, status_code = object_delete(HorillaMailTemplate, pk)
+        return Response(response, status=status_code)
+
+
+class MailTemplateDuplicateView(APIView):
+    """Duplicate a mail template (creates copy with title suffixed by ' (copy)')."""
+
+    serializer_class = HorillaMailTemplateSerializer
+    permission_classes = [IsAuthenticated]
+
+    @method_decorator(permission_required("base.add_horillamailtemplate"), name="dispatch")
+    def post(self, request, pk):
+        template = object_check(HorillaMailTemplate, pk)
+        if template is None:
+            return Response({"error": "Mail template not found"}, status=404)
+        new_template = HorillaMailTemplate.objects.create(
+            title=f"{template.title} (copy)",
+            body=template.body,
+            company_id=template.company_id,
+        )
+        serializer = self.serializer_class(new_template)
+        return Response(serializer.data, status=201)
+
+
+class MailTemplateBulkDeleteView(APIView):
+    """Bulk delete mail templates. Expects ?ids=1,2,3"""
+
+    permission_classes = [IsAuthenticated]
+
+    @method_decorator(permission_required("base.delete_horillamailtemplate"), name="dispatch")
+    def delete(self, request):
+        ids_param = request.query_params.get("ids", "")
+        ids = [int(x.strip()) for x in ids_param.split(",") if str(x).strip().isdigit()]
+        if not ids:
+            return Response({"error": "No valid ids provided"}, status=400)
+        HorillaMailTemplate.objects.filter(id__in=ids).delete()
+        return Response({"success": True, "deleted": len(ids)}, status=200)
+
+
+class MailTemplateOptionsView(APIView):
+    """Returns template language (placeholders for body editor autocomplete)."""
+
+    permission_classes = [IsAuthenticated]
+
+    @method_decorator(permission_required("base.view_horillamailtemplate"), name="dispatch")
+    def get(self, request):
+        form = MailTemplateForm()
+        mail_data = form.get_template_language()
+        template_language = [
+            {"label": str(label), "value": str(value)}
+            for label, value in mail_data.items()
+        ]
+        return Response({"template_language": template_language}, status=200)
 
 
 class WorkTypeView(APIView):

@@ -31,6 +31,46 @@ urlpatterns = [
         views.DepartmentView.as_view(),
         name="api-department_detail_with_pk",
     ),
+    path(
+        "multiple-approval-conditions/options/",
+        views.MultipleApprovalConditionOptionsView.as_view(),
+        name="api-multiple-approval-conditions-options",
+    ),
+    path(
+        "multiple-approval-conditions/",
+        views.MultipleApprovalConditionView.as_view(),
+        name="api-multiple-approval-conditions",
+    ),
+    path(
+        "multiple-approval-conditions/<int:pk>/",
+        views.MultipleApprovalConditionView.as_view(),
+        name="api-multiple-approval-conditions-detail",
+    ),
+    path(
+        "mail-templates/options/",
+        views.MailTemplateOptionsView.as_view(),
+        name="api-mail-templates-options",
+    ),
+    path(
+        "mail-templates/bulk-delete/",
+        views.MailTemplateBulkDeleteView.as_view(),
+        name="api-mail-templates-bulk-delete",
+    ),
+    path(
+        "mail-templates/",
+        views.MailTemplateView.as_view(),
+        name="api-mail-templates",
+    ),
+    path(
+        "mail-templates/<int:pk>/duplicate/",
+        views.MailTemplateDuplicateView.as_view(),
+        name="api-mail-templates-duplicate",
+    ),
+    path(
+        "mail-templates/<int:pk>/",
+        views.MailTemplateView.as_view(),
+        name="api-mail-templates-detail",
+    ),
     path("worktypes/", views.WorkTypeView.as_view(), name="api-worktype_detail"),
     path(
         "worktypes/<int:pk>/",
