@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from django.apps import apps
+from base.models import JobPosition
 from employee.models import Employee
 from leave.methods import calculate_requested_days
 from leave.models import *
@@ -586,21 +587,13 @@ class HoildaySerializer(serializers.ModelSerializer):
 
 
 class RestrictLeaveSerializer(serializers.ModelSerializer):
-    job_position = serializers.PrimaryKeyRelatedField(many=True, queryset=None, required=False, allow_null=True)
-    spesific_leave_types = serializers.PrimaryKeyRelatedField(many=True, queryset=None, required=False, allow_null=True)
-    exclued_leave_types = serializers.PrimaryKeyRelatedField(many=True, queryset=None, required=False, allow_null=True)
+    job_position = serializers.PrimaryKeyRelatedField(many=True, queryset=JobPosition.objects.all(), required=False, allow_null=True)
+    spesific_leave_types = serializers.PrimaryKeyRelatedField(many=True, queryset=LeaveType.objects.all(), required=False, allow_null=True)
+    exclued_leave_types = serializers.PrimaryKeyRelatedField(many=True, queryset=LeaveType.objects.all(), required=False, allow_null=True)
 
     class Meta:
         model = RestrictLeave
         exclude = ["company_id"]
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        from base.models import JobPosition
-        from leave.models import LeaveType
-        self.fields['job_position'].queryset = JobPosition.objects.all()
-        self.fields['spesific_leave_types'].queryset = LeaveType.objects.all()
-        self.fields['exclued_leave_types'].queryset = LeaveType.objects.all()
 
     def validate(self, data):
         start_date = data.get("start_date")
