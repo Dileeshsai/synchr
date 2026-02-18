@@ -171,6 +171,16 @@ urlpatterns = [
         name="api-employee-bulk-mail",
     ),
     path(
+        "mail-template-body/<int:template_id>/",
+        views.EmployeeMailTemplateBodyView.as_view(),
+        name="api-employee-mail-template-body",
+    ),
+    path(
+        "mail-preview/",
+        views.EmployeeMailPreviewView.as_view(),
+        name="api-employee-mail-preview",
+    ),
+    path(
         "employee-selector/",
         views.EmployeeSelectorView.as_view(),
         name="api-employee-selector",

@@ -14,7 +14,42 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.core.mail import send_mail
 
 from ...api_serializers.auth.serializers import GetEmployeeSerializer, ForgotPasswordSerializer, ResetPasswordSerializer, ChangePasswordSerializer
-from employee.models import Employee
+from employee.models import Employee, EmployeeWorkInformation
+
+
+def compute_user_role(user, employee):
+    """
+    Compute system role for the logged-in user.
+
+    Must match the logic used by the role-based employee dashboard/list endpoints.
+    Returns one of:
+    GUEST, SUPERUSER, ADMIN, CEO, DEPARTMENT_MANAGER, TEAM_MANAGER, EMPLOYEE
+    """
+    if not employee:
+        return "GUEST"
+
+    if user.is_superuser:
+        return "SUPERUSER"
+
+    if user.has_perm("employee.view_all_employees") or user.has_perm("employee.view_employee"):
+        # If user is tied to a company via work info, treat as CEO; else ADMIN
+        if hasattr(employee, "employee_work_info") and employee.employee_work_info:
+            return "CEO"
+        return "ADMIN"
+
+    is_manager = EmployeeWorkInformation.objects.filter(reporting_manager_id=employee).exists()
+    if is_manager:
+        if hasattr(employee, "employee_work_info") and employee.employee_work_info:
+            dept = employee.employee_work_info.department_id
+            if dept:
+                dept_employees = EmployeeWorkInformation.objects.filter(department_id=dept).exclude(
+                    reporting_manager_id=employee
+                )
+                if not dept_employees.exists():
+                    return "DEPARTMENT_MANAGER"
+        return "TEAM_MANAGER"
+
+    return "EMPLOYEE"
 
 
 User = get_user_model()
@@ -75,6 +110,8 @@ class LoginAPIView(APIView):
                 emp_data["permissions"] = list(user.get_all_permissions()) if not user.is_superuser else []
                 # Direct (user-only) permissions: used by frontend for Settings > Employee Permissions gating (e.g. companies)
                 emp_data["direct_permissions"] = list(user.get_user_permissions()) if not user.is_superuser else []
+                # System role (used by frontend for role-wise company behavior)
+                emp_data["user_role"] = compute_user_role(user, employee)
                 result = {
                     "employee": emp_data,
                     "access": str(refresh.access_token),
@@ -199,6 +236,8 @@ class UserProfileAPIView(APIView):
         data["permissions"] = list(user.get_all_permissions()) if not user.is_superuser else []
         # Direct (user-only) permissions: used by frontend for Settings > Employee Permissions gating (e.g. companies)
         data["direct_permissions"] = list(user.get_user_permissions()) if not user.is_superuser else []
+        # System role (used by frontend for role-wise company behavior)
+        data["user_role"] = compute_user_role(user, employee)
         # Logged-in user's company (for defaulting create-employee company when user is employee)
         try:
             company = employee.get_company()

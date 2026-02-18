@@ -9,6 +9,7 @@ import logging
 
 from django.core.cache import cache
 from django.core.mail import EmailMessage
+from django.core.mail.backends.base import BaseEmailBackend
 from django.core.mail.backends.smtp import EmailBackend
 
 from base.models import DynamicEmailConfiguration, EmailLog
@@ -195,18 +196,60 @@ if EMAIL_BACKEND and EMAIL_BACKEND != default:
 
 
 class ConfiguredEmailBackend(BACKEND_CLASS):
-
+    """
+    ConfiguredEmailBackend wraps the configured email backend and adds email logging.
+    """
+    
     def send_messages(self, email_messages):
-        response = super(BACKEND_CLASS, self).send_messages(email_messages)
+        """
+        Send email messages using the parent backend and log them.
+        Returns the number of successfully sent messages.
+        This method properly overrides BaseEmailBackend.send_messages().
+        """
+        if not email_messages:
+            return 0
+        
+        # Get the parent class's send_messages method
+        # When BACKEND_CLASS is Django's EmailBackend, we need to call its send_messages
+        parent_send = super(ConfiguredEmailBackend, self).send_messages
+        
+        # Call parent's send_messages method
+        try:
+            response = parent_send(email_messages)
+        except Exception as e:
+            logger.error(f"Error calling parent send_messages: {str(e)}", exc_info=True)
+            # If parent call fails, try direct call to BACKEND_CLASS
+            try:
+                response = BACKEND_CLASS.send_messages(self, email_messages)
+            except Exception as e2:
+                logger.error(f"Error calling BACKEND_CLASS.send_messages: {str(e2)}", exc_info=True)
+                raise
+        
+        # Ensure response is an integer (number of sent messages)
+        if response is None:
+            response = 0
+        elif not isinstance(response, int):
+            # If response is truthy but not int, assume all were sent
+            response = len(email_messages) if response else 0
+        
+        # Log each email message
         for message in email_messages:
-            email_log = EmailLog(
-                subject=message.subject,
-                from_email=self.dynamic_from_email_with_display_name,
-                to=message.to,
-                body=message.body,
-                status="sent" if response else "failed",
-            )
-            email_log.save()
+            try:
+                from_email = getattr(self, 'dynamic_from_email_with_display_name', None)
+                if not from_email:
+                    from_email = message.from_email or getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@example.com')
+                
+                email_log = EmailLog(
+                    subject=message.subject or '',
+                    from_email=from_email,
+                    to=message.to or [],
+                    body=message.body or '',
+                    status="sent" if response > 0 else "failed",
+                )
+                email_log.save()
+            except Exception as e:
+                logger.warning(f"Failed to save email log: {str(e)}")
+        
         return response
 
 

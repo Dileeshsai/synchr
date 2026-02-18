@@ -1,11 +1,8 @@
 import io
 import logging
-import threading
-
-import io
-import logging
 import mimetypes
 import pandas as pd
+import re
 import threading
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -14,6 +11,7 @@ from django.core.mail import EmailMessage, send_mail
 from django.db.models import Count, ProtectedError, Q
 from django.http import Http404, HttpResponse, FileResponse
 from django.template import Context, Template
+from django.utils.html import escape
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
 from django.utils.decorators import method_decorator
@@ -25,8 +23,10 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 
-from base.models import JobPosition
+from base.models import JobPosition, HorillaMailTemplate
+from base.backends import ConfiguredEmailBackend
 from base.views import generate_error_report
+from base.methods import generate_pdf
 from employee.filters import (
     DisciplinaryActionFilter,
     DocumentRequestFilter,
@@ -92,6 +92,62 @@ from ...api_serializers.employee.serializers import (
 logger = logging.getLogger(__name__)
 User = get_user_model()
 _password_reset_token_generator = PasswordResetTokenGenerator()
+
+
+def _wrap_professional_email_html(inner_html: str, *, subject: str, company_name: str, sender_name: str) -> str:
+    """
+    Wrap provided HTML snippet in a simple, professional email layout.
+    If callers already pass full HTML (<html>...), they should bypass this wrapper.
+    """
+    safe_company = escape(company_name or "HRMS")
+    safe_sender = escape(sender_name or "HRMS")
+    safe_subject = escape(subject or "")
+    preheader = f"{safe_subject} — {safe_company}"
+    # Note: keep styles inline-ish for email client compatibility.
+    return f"""<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="x-apple-disable-message-reformatting" />
+    <title>{safe_subject}</title>
+  </head>
+  <body style="margin:0;padding:0;background:#f5f6f8;color:#111827;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;">
+    <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;visibility:hidden;">
+      {preheader}
+    </div>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:#f5f6f8;">
+      <tr>
+        <td align="center" style="padding:24px 12px;">
+          <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;max-width:600px;">
+            <tr>
+              <td style="padding:0 0 12px 0;">
+                <div style="font-size:14px;font-weight:700;letter-spacing:.2px;color:#111827;">
+                  {safe_company}
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td style="background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;padding:20px;">
+                <div style="font-size:16px;line-height:1.55;color:#111827;">
+                  {inner_html}
+                </div>
+                <div style="margin-top:18px;padding-top:14px;border-top:1px solid #eef2f7;font-size:12px;line-height:1.4;color:#6b7280;">
+                  Sent by {safe_sender} via {safe_company}.
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:14px 0 0 0;font-size:11px;line-height:1.4;color:#9ca3af;">
+                If you received this email by mistake, you can ignore it.
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>"""
 
 
 def permission_check(request, perm):
@@ -2213,16 +2269,55 @@ class EmployeeArchiveView(APIView):
 class EmployeeBulkMailView(APIView):
     """
     Send bulk mail to selected employees (matches backend send_mail_to_employee).
-    POST body: { "subject": str, "body": str (HTML), "employee_ids": [id, ...] }
+    POST body: {
+        "subject": str,
+        "body": str (HTML),
+        "employee_ids": [id, ...],
+        "also_send_to": [id, ...] (optional - additional recipients),
+        "template_attachments": [template_id, ...] (optional - templates to attach as PDFs),
+        "other_attachments": [file, ...] (optional - file uploads)
+    }
     """
 
     permission_classes = [IsAuthenticated]
 
     @method_decorator(permission_required("employee.change_employee"), name="dispatch")
     def post(self, request):
+        # Debug: Log request content type and data structure
+        logger.info(f"Bulk mail request - Content-Type: {request.content_type}")
+        logger.info(f"Bulk mail request - Data keys: {list(request.data.keys()) if hasattr(request.data, 'keys') else 'N/A'}")
+        
         subject = request.data.get("subject", "").strip()
         body = request.data.get("body", "").strip()
-        employee_ids = request.data.get("employee_ids") or []
+        
+        # Handle FormData arrays - DRF's request.data for multipart/form-data is QueryDict which supports getlist()
+        # For JSON requests, request.data is a dict, so we need to handle both cases
+        try:
+            # Try getlist() first (works for QueryDict/multipart)
+            employee_ids = request.data.getlist("employee_ids")
+            logger.info(f"Got employee_ids via getlist(): {employee_ids}")
+        except AttributeError:
+            # Fallback for JSON requests
+            employee_ids = request.data.get("employee_ids", [])
+            if not isinstance(employee_ids, list):
+                employee_ids = [employee_ids] if employee_ids else []
+            logger.info(f"Got employee_ids via get(): {employee_ids}")
+        
+        try:
+            also_send_to = request.data.getlist("also_send_to")
+        except AttributeError:
+            also_send_to = request.data.get("also_send_to", [])
+            if not isinstance(also_send_to, list):
+                also_send_to = [also_send_to] if also_send_to else []
+        
+        try:
+            template_attachment_ids = request.data.getlist("template_attachments")
+        except AttributeError:
+            template_attachment_ids = request.data.get("template_attachments", [])
+            if not isinstance(template_attachment_ids, list):
+                template_attachment_ids = [template_attachment_ids] if template_attachment_ids else []
+        
+        other_attachments = request.FILES.getlist("other_attachments") if hasattr(request, 'FILES') and request.FILES else []
 
         if not subject:
             return Response(
@@ -2234,85 +2329,351 @@ class EmployeeBulkMailView(APIView):
                 {"error": "Message body is required"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        if not employee_ids or not isinstance(employee_ids, list):
+        # Ensure employee_ids is a list
+        if not isinstance(employee_ids, list):
+            employee_ids = []
+        
+        if not employee_ids:
+            logger.warning(f"Bulk mail request with empty employee_ids. Request data keys: {list(request.data.keys())}")
             return Response(
                 {"error": "employee_ids must be a non-empty list of employee IDs"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        # Normalize IDs (preserve order, drop invalids)
+        normalized_ids = []
+        seen = set()
+        for raw_id in employee_ids:
+            try:
+                # Handle both string and int IDs
+                emp_id = int(raw_id) if raw_id is not None else None
+                if emp_id is None:
+                    continue
+            except (TypeError, ValueError):
+                logger.warning(f"Invalid employee ID in request: {raw_id} (type: {type(raw_id)})")
+                continue
+            if emp_id in seen:
+                continue
+            seen.add(emp_id)
+            normalized_ids.append(emp_id)
+        
+        if not normalized_ids:
+            logger.warning(f"Bulk mail request: No valid employee IDs after normalization. Original: {employee_ids}")
+            return Response(
+                {"error": "No valid employee IDs found in employee_ids"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Normalize also_send_to IDs
+        normalized_also_send_to = []
+        seen_also = set()
+        for raw_id in also_send_to:
+            try:
+                emp_id = int(raw_id)
+            except (TypeError, ValueError):
+                continue
+            if emp_id in seen_also or emp_id in seen:
+                continue
+            seen_also.add(emp_id)
+            normalized_also_send_to.append(emp_id)
+
+        # Combine all recipient IDs (main + also_send_to)
+        all_recipient_ids = normalized_ids + normalized_also_send_to
+
+        if not all_recipient_ids:
+            return Response(
+                {"error": "employee_ids must contain at least one valid employee ID"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Normalize template attachment IDs
+        normalized_template_attachment_ids = []
+        for raw_id in template_attachment_ids:
+            try:
+                template_id = int(raw_id)
+                normalized_template_attachment_ids.append(template_id)
+            except (TypeError, ValueError):
+                continue
+
         results = []
         errors = []
         sender_employee = getattr(request.user, "employee_get", None)
+        company_name = getattr(settings, "SITE_NAME", None) or "HRMS"
+        sender_name = None
+        try:
+            if sender_employee:
+                sender_name = sender_employee.get_full_name()
+                # Best-effort company from sender (if available)
+                sender_company = sender_employee.get_company() if hasattr(sender_employee, "get_company") else None
+                if sender_company:
+                    company_name = getattr(sender_company, "company", None) or getattr(sender_company, "name", None) or company_name
+        except Exception:
+            sender_name = sender_name or None
 
-        for emp_id in employee_ids:
+        # Compile the template once (huge speed-up vs per-employee compilation)
+        try:
+            template_bdy = Template(body)
+        except Exception as e:
+            return Response(
+                {"error": f"Invalid template body: {str(e)}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Fetch all employees in one query to avoid N+1 DB hits
+        employees = (
+            Employee.objects.filter(id__in=all_recipient_ids)
+            .select_related("employee_work_info")
+        )
+        employees_by_id = {e.id: e for e in employees}
+
+        # Fetch template attachments if any
+        template_attachment_map = {}  # {template_id: template_obj} for filename generation
+        if normalized_template_attachment_ids:
+            templates = HorillaMailTemplate.objects.filter(id__in=normalized_template_attachment_ids)
+            template_attachment_map = {t.id: t for t in templates}
+
+        # Use a single configured email backend/connection for the whole batch
+        connection = ConfiguredEmailBackend()
+        try:
+            connection.open()
+            logger.info(f"Email connection opened successfully. Sending to {len(all_recipient_ids)} recipients.")
+        except Exception as e:
+            error_msg = f"Could not open email connection: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return Response(
+                {"error": error_msg},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        try:
+            for emp_id in all_recipient_ids:
+                employee = employees_by_id.get(emp_id)
+                if not employee:
+                    errors.append({"employee_id": emp_id, "error": "Employee not found"})
+                    continue
+
+                send_to_mail = None
+                # Check employee_work_info.email first (preferred)
+                if getattr(employee, "employee_work_info", None):
+                    work_info_email = getattr(employee.employee_work_info, "email", None)
+                    if work_info_email and work_info_email.strip():
+                        send_to_mail = work_info_email.strip()
+                
+                # Fallback to employee.email if work_info email not available
+                if not send_to_mail:
+                    emp_email = getattr(employee, "email", None)
+                    if emp_email and emp_email.strip():
+                        send_to_mail = emp_email.strip()
+                
+                if not send_to_mail:
+                    employee_name = employee.get_full_name() or str(employee)
+                    error_msg = f"No email address set for {employee_name}"
+                    logger.warning(error_msg)
+                    errors.append(
+                        {
+                            "employee_id": emp_id,
+                            "employee": employee_name,
+                            "email": None,
+                            "error": "No email address set for this employee",
+                        }
+                    )
+                    continue
+                
+                # Validate email format
+                email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+                if not re.match(email_pattern, send_to_mail):
+                    employee_name = employee.get_full_name() or str(employee)
+                    error_msg = f"Invalid email format: {send_to_mail}"
+                    logger.warning(f"{employee_name}: {error_msg}")
+                    errors.append(
+                        {
+                            "employee_id": emp_id,
+                            "employee": employee_name,
+                            "email": send_to_mail,
+                            "error": f"Invalid email address format",
+                        }
+                    )
+                    continue
+
+                try:
+                    context = Context(
+                        {
+                            "instance": employee,
+                            "self": sender_employee,
+                            "request": request,
+                        }
+                    )
+                    render_bdy = template_bdy.render(context)
+                except Exception as e:
+                    employee_name = employee.get_full_name() or str(employee)
+                    error_msg = f"Template rendering error: {str(e)[:200]}"
+                    logger.error(f"Failed to render email template for {employee_name}: {error_msg}", exc_info=True)
+                    errors.append(
+                        {
+                            "employee_id": emp_id,
+                            "employee": employee_name,
+                            "email": send_to_mail,
+                            "error": "Failed to render email template",
+                        }
+                    )
+                    continue
+
+                try:
+                    # Use the rendered body as-is, without adding headers/footers
+                    if not render_bdy or not render_bdy.strip():
+                        logger.warning(f"Empty body for employee {emp_id}, using subject as body")
+                        render_bdy = escape(subject or "No content")
+                    
+                    safe_subject = escape(subject or "")
+                    lowered = render_bdy.lstrip().lower()
+                    
+                    # Check if body is already a full HTML document
+                    if lowered.startswith("<!doctype") or lowered.startswith("<html") or "<body" in lowered:
+                        final_html = render_bdy
+                    else:
+                        # Wrap in minimal HTML without headers/footers
+                        # Convert plain text newlines to <br> tags for proper display
+                        body_content = render_bdy.strip()
+                        # If it's plain text (no HTML tags), convert newlines to <br>
+                        if not any(tag in body_content.lower() for tag in ['<p>', '<div>', '<br>', '<span>', '<strong>', '<em>', '<b>', '<i>']):
+                            # Plain text - convert newlines to <br> tags
+                            body_content = escape(body_content).replace('\n', '<br>\n')
+                        # Otherwise, use as-is (already HTML)
+                        
+                        final_html = f"""<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>{safe_subject}</title>
+  </head>
+  <body style="margin:0;padding:20px;background:#ffffff;color:#111827;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;font-size:16px;line-height:1.6;">
+    <div style="max-width:600px;margin:0 auto;">
+      {body_content}
+    </div>
+  </body>
+</html>"""
+                    
+                    logger.info(f"Final HTML for employee {emp_id}: {len(final_html)} chars, body: {len(render_bdy)} chars")
+
+                    # Prepare attachments
+                    attachments = []
+                    # Add file attachments
+                    for file in other_attachments:
+                        file.seek(0)  # Reset file pointer
+                        attachments.append((file.name, file.read(), file.content_type or "application/octet-stream"))
+
+                    # Add template attachments as PDFs
+                    for template_id in normalized_template_attachment_ids:
+                        template_obj = template_attachment_map.get(template_id)
+                        if not template_obj:
+                            continue
+                        try:
+                            template_bdy_attach = Template(template_obj.body)
+                            context_attach = Context(
+                                {
+                                    "instance": employee,
+                                    "self": sender_employee,
+                                    "request": request,
+                                }
+                            )
+                            render_bdy_attach = template_bdy_attach.render(context_attach)
+                            # Use template title for filename, sanitize it
+                            safe_title = "".join(c for c in template_obj.title if c.isalnum() or c in (' ', '-', '_')).strip()[:50]
+                            filename = f"{safe_title}.pdf" if safe_title else "Document.pdf"
+                            pdf_content = generate_pdf(render_bdy_attach, {}, path=False, title=safe_title or "Document").content
+                            attachments.append((filename, pdf_content, "application/pdf"))
+                        except Exception as e:
+                            logger.warning(f"Failed to generate PDF attachment from template {template_id} for employee {emp_id}: {str(e)}")
+
+                    email = EmailMessage(
+                        subject=subject,
+                        body=final_html,
+                        to=[send_to_mail],
+                        connection=connection,
+                    )
+                    email.content_subtype = "html"
+                    email.attachments = attachments
+                    # Send using the already-open connection; sending one-by-one keeps per-employee error reporting.
+                    try:
+                        # Actually send the email
+                        sent_count = connection.send_messages([email])
+                        if sent_count > 0:
+                            employee_name = employee.get_full_name() or str(employee)
+                            results.append(
+                                {
+                                    "employee_id": emp_id,
+                                    "employee": employee_name,
+                                    "email": send_to_mail,
+                                    "sent": True,
+                                }
+                            )
+                            employee_name = employee.get_full_name() or str(employee)
+                            logger.info(f"Successfully sent email to {employee_name} ({send_to_mail})")
+                        else:
+                            # send_messages returned 0, meaning no messages were sent
+                            error_msg = "Email server did not accept the message. Please check mail server configuration and recipient email address."
+                            employee_name = employee.get_full_name() or str(employee)
+                            logger.warning(f"Email not sent to {employee_name} ({send_to_mail}): Email backend returned 0 sent messages")
+                            errors.append(
+                                {
+                                    "employee_id": emp_id,
+                                    "employee": employee_name,
+                                    "email": send_to_mail,
+                                    "error": error_msg,
+                                }
+                            )
+                    except Exception as send_error:
+                        error_msg = str(send_error)
+                        # Provide more user-friendly error messages
+                        if "authentication failed" in error_msg.lower() or "smtp" in error_msg.lower():
+                            friendly_error = "Email server authentication failed. Please check mail server settings."
+                        elif "connection" in error_msg.lower() or "timeout" in error_msg.lower():
+                            friendly_error = "Could not connect to email server. Please check mail server configuration."
+                        elif "invalid" in error_msg.lower() and "email" in error_msg.lower():
+                            friendly_error = f"Invalid email address: {send_to_mail}"
+                        else:
+                            friendly_error = f"Failed to send: {error_msg[:100]}"  # Truncate long errors
+                        
+                        employee_name = employee.get_full_name() or str(employee)
+                        logger.error(f"Failed to send email to {employee_name} ({send_to_mail}): {error_msg}", exc_info=True)
+                        errors.append(
+                            {
+                                "employee_id": emp_id,
+                                "employee": employee_name,
+                                "email": send_to_mail,
+                                "error": friendly_error,
+                            }
+                        )
+                except Exception as e:
+                    error_msg = str(e)
+                    employee_name = employee.get_full_name() if employee else "Unknown"
+                    logger.error(f"Error preparing email for employee {emp_id} ({employee_name}): {error_msg}", exc_info=True)
+                    # Try to get email if available
+                    prep_email = None
+                    if employee:
+                        if getattr(employee, "employee_work_info", None):
+                            prep_email = getattr(employee.employee_work_info, "email", None)
+                        if not prep_email:
+                            prep_email = getattr(employee, "email", None)
+                    errors.append(
+                        {
+                            "employee_id": emp_id,
+                            "employee": employee_name,
+                            "email": prep_email,
+                            "error": f"Failed to prepare email: {error_msg[:200]}",
+                        }
+                    )
+        finally:
             try:
-                employee = Employee.objects.get(id=emp_id)
-            except Employee.DoesNotExist:
-                errors.append({"employee_id": emp_id, "error": "Employee not found"})
-                continue
+                connection.close()
+            except Exception:
+                pass
 
-            send_to_mail = None
-            if getattr(employee, "employee_work_info", None) and getattr(
-                employee.employee_work_info, "email", None
-            ):
-                send_to_mail = employee.employee_work_info.email
-            if not send_to_mail:
-                send_to_mail = getattr(employee, "email", None)
-            if not send_to_mail:
-                errors.append(
-                    {
-                        "employee_id": emp_id,
-                        "employee": str(employee),
-                        "error": "No email set for this employee",
-                    }
-                )
-                continue
-
-            try:
-                template_bdy = Template(body)
-                context = Context(
-                    {
-                        "instance": employee,
-                        "self": sender_employee,
-                        "request": request,
-                    }
-                )
-                render_bdy = template_bdy.render(context)
-            except Exception as e:
-                errors.append(
-                    {
-                        "employee_id": emp_id,
-                        "employee": str(employee),
-                        "error": str(e),
-                    }
-                )
-                continue
-
-            try:
-                email = EmailMessage(
-                    subject=subject,
-                    body=render_bdy,
-                    to=[send_to_mail],
-                )
-                email.content_subtype = "html"
-                email.send()
-                results.append(
-                    {
-                        "employee_id": emp_id,
-                        "employee": str(employee),
-                        "email": send_to_mail,
-                        "sent": True,
-                    }
-                )
-            except Exception as e:
-                errors.append(
-                    {
-                        "employee_id": emp_id,
-                        "employee": str(employee),
-                        "error": str(e),
-                    }
-                )
-
+        logger.info(f"Bulk mail completed: {len(results)} sent, {len(errors)} failed out of {len(all_recipient_ids)} total")
+        if errors:
+            logger.warning(f"Bulk mail errors: {errors}")
+        
         return Response(
             {
                 "success": len(errors) == 0,
@@ -2320,10 +2681,77 @@ class EmployeeBulkMailView(APIView):
                 "failed": len(errors),
                 "results": results,
                 "errors": errors,
-                "total": len(employee_ids),
+                "total": len(all_recipient_ids),
             },
             status=200,
         )
+
+
+class EmployeeMailTemplateBodyView(APIView):
+    """
+    Get mail template body by ID (for auto-filling message body).
+    GET /api/v1/employee/mail-template-body/{template_id}/
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    @method_decorator(permission_required("base.view_horillamailtemplate"), name="dispatch")
+    def get(self, request, template_id):
+        try:
+            template = HorillaMailTemplate.objects.get(id=template_id)
+            return Response({"body": template.body}, status=200)
+        except HorillaMailTemplate.DoesNotExist:
+            logger.warning(f"Template {template_id} not found")
+            return Response({"error": f"Template with ID {template_id} not found"}, status=404)
+        except Exception as e:
+            logger.error(f"Error fetching template {template_id}: {str(e)}", exc_info=True)
+            return Response({"error": f"Error fetching template: {str(e)}"}, status=500)
+
+
+class EmployeeMailPreviewView(APIView):
+    """
+    Preview mail body with template variables rendered.
+    POST body: { "body": str (HTML template), "employee_id": int (optional, for preview) }
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    @method_decorator(permission_required("employee.change_employee"), name="dispatch")
+    def post(self, request):
+        body = request.data.get("body", "").strip()
+        employee_id = request.data.get("employee_id")
+
+        if not body:
+            return Response({"error": "Body is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            template_bdy = Template(body)
+            sender_employee = getattr(request.user, "employee_get", None)
+
+            # Use provided employee_id or first selected employee for preview
+            if employee_id:
+                try:
+                    employee = Employee.objects.get(id=employee_id)
+                except Employee.DoesNotExist:
+                    return Response({"error": "Employee not found"}, status=404)
+            else:
+                # Use sender as fallback for preview
+                employee = sender_employee
+
+            if not employee:
+                return Response({"error": "No employee available for preview"}, status=400)
+
+            context = Context(
+                {
+                    "instance": employee,
+                    "self": sender_employee,
+                    "request": request,
+                }
+            )
+            rendered_body = template_bdy.render(context)
+            return Response({"body": rendered_body}, status=200)
+        except Exception as e:
+            return Response({"error": f"Template rendering error: {str(e)}"}, status=400)
 
 
 class EmployeeSelectorView(APIView):
