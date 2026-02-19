@@ -207,7 +207,8 @@ CORS_ALLOWED_ORIGINS = [
     "http://192.168.0.5:8000",
     "http://localhost:8000",
     "http://127.0.0.1:8000",
-    "https://app.synchrm.com",  # Production domain
+    "https://app.synchrm.com",
+    "http://192.168.2.171:8000",  # Production domain
 ]
 
 CORS_ALLOW_ALL_ORIGINS = True  # Allow all origins for development and mobile APK

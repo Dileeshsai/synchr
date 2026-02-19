@@ -167,7 +167,7 @@ class EmployeeFaceDetectionGetPostAPIView(APIView):
             
             # Get face detection records for the company
             face_records = EmployeeFaceDetection.objects.filter(
-                employee_id_employee_work_info_company_id=company
+                employee_id__employee_work_info__company_id=company
             ).select_related('employee_id')
             
             # Apply pagination
@@ -420,20 +420,41 @@ class FaceDetectionStatusAPIView(APIView):
         """Get face detection status for the user's company"""
         try:
             # Check if user has an associated employee
-            if not hasattr(request.user, 'employee_get') or not request.user.employee_get:
-                return Response(
-                    {"error": "No employee profile found for this user"}, 
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+            employee = getattr(request.user, 'employee_get', None)
+            if not employee:
+                # Fallback: try to find employee by user
+                try:
+                    employee = Employee.objects.filter(employee_user_id=request.user).first()
+                except Exception:
+                    pass
             
-            employee = request.user.employee_get
+            if not employee:
+                # Return safe defaults when no employee found
+                status_data = {
+                    "is_enabled": False,
+                    "company_id": None,
+                    "company_name": None,
+                    "threshold": 0.6,
+                    "total_registered_faces": 0,
+                    "active_faces": 0
+                }
+                serializer = FaceDetectionStatusSerializer(status_data)
+                return Response(serializer.data, status=status.HTTP_200_OK)
+            
             company = employee.get_company()
             
             if not company:
-                return Response(
-                    {"error": "No company found for this employee"}, 
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+                # Return safe defaults when employee has no company
+                status_data = {
+                    "is_enabled": False,
+                    "company_id": None,
+                    "company_name": None,
+                    "threshold": 0.6,
+                    "total_registered_faces": 0,
+                    "active_faces": 0
+                }
+                serializer = FaceDetectionStatusSerializer(status_data)
+                return Response(serializer.data, status=status.HTTP_200_OK)
             
             # Get face detection configuration
             try:
@@ -444,21 +465,28 @@ class FaceDetectionStatusAPIView(APIView):
                 is_enabled = False
                 threshold = 0.6
             
-            # Get face registration counts
-            total_registered = EmployeeFaceDetection.objects.filter(
-                employee_id_employee_work_info_company_id=company
-            ).count()
-            
-            # Since EmployeeFaceDetection model doesn't have is_active field, 
-            # we'll count all face records as active
-            active_faces = EmployeeFaceDetection.objects.filter(
-                employee_id_employee_work_info_company_id=company
-            ).count()
+            # Get face registration counts using correct Django ORM relationship path
+            # employee_id -> employee_work_info -> company_id (use double underscores)
+            try:
+                total_registered = EmployeeFaceDetection.objects.filter(
+                    employee_id__employee_work_info__company_id=company
+                ).count()
+                
+                # Since EmployeeFaceDetection model doesn't have is_active field, 
+                # we'll count all face records as active
+                active_faces = EmployeeFaceDetection.objects.filter(
+                    employee_id__employee_work_info__company_id=company
+                ).count()
+            except Exception as filter_error:
+                # If filter fails (e.g., employee_work_info doesn't exist), default to 0
+                logger.warning(f"Error filtering face detections by company: {str(filter_error)}")
+                total_registered = 0
+                active_faces = 0
             
             status_data = {
                 "is_enabled": is_enabled,
                 "company_id": company.id,
-                "company_name": company.company,
+                "company_name": getattr(company, 'company', None) or getattr(company, 'name', None),
                 "threshold": threshold,
                 "total_registered_faces": total_registered,
                 "active_faces": active_faces
@@ -468,11 +496,20 @@ class FaceDetectionStatusAPIView(APIView):
             return Response(serializer.data, status=status.HTTP_200_OK)
             
         except Exception as e:
-            logger.error(f"Error getting face detection status: {str(e)}")
-            return Response(
-                {"error": "Failed to get face detection status"}, 
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+            logger.exception(f"Error getting face detection status: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            # Return safe defaults instead of 500 error
+            status_data = {
+                "is_enabled": False,
+                "company_id": None,
+                "company_name": None,
+                "threshold": 0.6,
+                "total_registered_faces": 0,
+                "active_faces": 0
+            }
+            serializer = FaceDetectionStatusSerializer(status_data)
+            return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 class BulkFaceRegistrationAPIView(APIView):

@@ -291,19 +291,8 @@ $(document).ready(function() {
         }, 'image/jpeg', 0.8);
     });
     
-    // Load current attendance status
-    function loadAttendanceStatus() {
-        $.ajax({
-            url: '{% url "clock-in" %}',
-            type: 'GET',
-            success: function(response) {
-                $('#attendance-activity-container').html(response);
-            }
-        });
-    }
-    
-    // Load attendance status on page load
-    loadAttendanceStatus();
+    // Attendance status container is left empty; clock-in view only accepts HTMX (GET would return 405).
+    // Status will update after a successful face check-in/out via the response.html in submitFaceImage.
 });
 
 // Retry function for face recognition

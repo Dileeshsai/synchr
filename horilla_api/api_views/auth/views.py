@@ -85,11 +85,13 @@ class LoginAPIView(APIView):
                 face_detection_image = None
                 geo_fencing = False
                 company_id = None
+                company_name = None
                 
                 try:
                     company = employee.get_company()
                     if company:
                         company_id = company.id
+                        company_name = getattr(company, 'company', None) or getattr(company, 'name', None)
                         try:
                             face_detection = getattr(company.face_detection, 'start', False)
                         except: pass
@@ -119,6 +121,7 @@ class LoginAPIView(APIView):
                     "face_detection_image": face_detection_image,
                     "geo_fencing": geo_fencing,
                     "company_id": company_id,
+                    "company_name": company_name,
                 }
                 return Response(result, status=200)
             else:
@@ -242,8 +245,10 @@ class UserProfileAPIView(APIView):
         try:
             company = employee.get_company()
             data["company_id"] = company.id if company else None
+            data["company_name"] = getattr(company, 'company', None) or getattr(company, 'name', None) if company else None
         except Exception:
             data["company_id"] = None
+            data["company_name"] = None
         return Response(data)
 
 
