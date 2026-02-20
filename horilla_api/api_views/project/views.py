@@ -308,35 +308,51 @@ class ProjectAPIView(APIView):
     def _get_filtered_queryset(self, request):
         """
         Returns queryset filtered by role and company membership.
-        - Superusers: all projects
-        - Regular employees: projects from their company OR projects where they are manager/member
+        - Superusers: respect navbar company switcher (selected_company in session).
+          If selected_company == "all" -> all projects; if specific company ID -> only that company's projects.
+        - Regular employees: projects from their company OR projects where they are manager/member (unchanged).
         """
         queryset = Project.objects.select_related("company_id").prefetch_related(
             "managers", "members"
         ).order_by("-id")
 
-        # Superusers see all projects
+        # Superusers: scope by selected company from navbar
+        # Check both query param (React frontend) and session (Django UI)
         if request.user.is_superuser:
+            # Priority 1: Query parameter (React frontend sends companyId as company_id)
+            company_id_param = request.query_params.get("company_id")
+            if company_id_param and str(company_id_param).strip().lower() not in ("", "all"):
+                try:
+                    cid = int(company_id_param)
+                    queryset = queryset.filter(company_id_id=cid)
+                    return queryset
+                except (TypeError, ValueError):
+                    pass  # invalid value: fallback to session
+            
+            # Priority 2: Session (Django UI navbar switcher)
+            selected_company = request.session.get("selected_company")
+            if selected_company and selected_company != "all":
+                try:
+                    cid = int(selected_company)
+                    queryset = queryset.filter(company_id_id=cid)
+                except (TypeError, ValueError):
+                    pass  # invalid value: show all
+            
+            # If both are "all" or missing -> return all projects (unchanged queryset)
             return queryset
 
-        # Get employee safely
+        # Non-superuser: existing employee company + manager/member filtering (unchanged)
         employee = getattr(request.user, "employee_get", None)
         if not employee:
-            # Guest users see no projects
             return Project.objects.none()
 
-        # Get company from employee work info
         company = None
         if hasattr(employee, "employee_work_info") and employee.employee_work_info:
             company = employee.employee_work_info.company_id
 
-        # Build filter: company match OR manager/member relationship
         filter_conditions = Q()
-        
         if company:
             filter_conditions |= Q(company_id=company)
-        
-        # Include projects where employee is manager or member (even if different company)
         filter_conditions |= Q(managers=employee) | Q(members=employee)
 
         return queryset.filter(filter_conditions).distinct()
