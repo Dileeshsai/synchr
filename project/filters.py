@@ -22,6 +22,7 @@ class ProjectFilter(HorillaFilterSet):
             "end_date",
             "start_date",
             "is_active",
+            "company_id",
         ]
 
     start_from = django_filters.DateFilter(
@@ -90,6 +91,7 @@ class TaskAllFilter(HorillaFilterSet):
             "task_members",
             "end_date",
             "status",
+            "project__company_id",
         ]
 
     def __init__(self, *args, **kwargs):
@@ -145,6 +147,8 @@ class TimeSheetFilter(HorillaFilterSet):
             "task_id",
             "date",
             "status",
+            "project_id__company_id",
+            "employee_id__employee_work_info__company_id",
         ]
 
     def __init__(self, *args, **kwargs):

@@ -91,6 +91,26 @@ def object_delete(cls, pk):
         return {"error": str(e)}, 400
 
 
+def _get_effective_company_id(request):
+    """
+    Resolve company ID for filtering Base data (Departments, Job Positions, Job Roles, Companies).
+    - If query param company_id is provided and not 'all', use it (admin/superuser with org switcher).
+    - Else if the logged-in user has an employee with a company, use that company (scoped user).
+    - Else return None (no filter; e.g. superuser viewing all).
+    """
+    param = request.query_params.get("company_id")
+    if param and str(param).strip().lower() not in ("", "all"):
+        try:
+            return int(param)
+        except (TypeError, ValueError):
+            pass
+    employee = getattr(request.user, "employee_get", None)
+    if employee and hasattr(employee, "get_company") and employee.get_company():
+        company = employee.get_company()
+        return company.id if getattr(company, "id", None) else None
+    return None
+
+
 def individual_permssion_check(request):
     employee_id = request.GET.get("employee_id")
     employee = Employee.objects.filter(id=employee_id).first()
@@ -122,14 +142,19 @@ class JobPositionView(APIView):
 
     @method_decorator(permission_required("base.view_jobposition"))
     def get(self, request, pk=None):
+        company_id = _get_effective_company_id(request)
         if pk:
             job_position = object_check(JobPosition, pk)
             if job_position is None:
+                return Response({"error": "Job position not found "}, status=404)
+            if company_id is not None and not job_position.company_id.filter(pk=company_id).exists():
                 return Response({"error": "Job position not found "}, status=404)
             serializer = self.serializer_class(job_position)
             return Response(serializer.data, status=200)
 
         job_positions = JobPosition.objects.all()
+        if company_id is not None:
+            job_positions = job_positions.filter(company_id=company_id)
         paginater = PageNumberPagination()
         page = paginater.paginate_queryset(job_positions, request)
         serializer = self.serializer_class(page, many=True)
@@ -148,7 +173,14 @@ class JobPositionView(APIView):
 
     @method_decorator(permission_required("base.add_jobposition"))
     def post(self, request):
-        serializer = self.serializer_class(data=request.data)
+        data = request.data.copy()
+        # Auto-set company_id if not provided
+        if "company_id" not in data or not data.get("company_id"):
+            company_id = _get_effective_company_id(request)
+            if company_id is not None:
+                # Convert to list format for ManyToMany field
+                data["company_id"] = [company_id]
+        serializer = self.serializer_class(data=data)
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data, status=201)
@@ -169,14 +201,19 @@ class DepartmentView(APIView):
 
     @method_decorator(permission_required("base.view_department"), name="dispatch")
     def get(self, request, pk=None):
+        company_id = _get_effective_company_id(request)
         if pk:
             department = object_check(Department, pk)
             if department is None:
+                return Response({"error": "Department not found "}, status=404)
+            if company_id is not None and not department.company_id.filter(pk=company_id).exists():
                 return Response({"error": "Department not found "}, status=404)
             serializer = self.serializer_class(department)
             return Response(serializer.data, status=200)
 
         departments = Department.objects.all()
+        if company_id is not None:
+            departments = departments.filter(company_id=company_id)
         paginator = PageNumberPagination()
         page = paginator.paginate_queryset(departments, request)
         serializer = self.serializer_class(page, many=True)
@@ -195,7 +232,14 @@ class DepartmentView(APIView):
 
     @method_decorator(permission_required("base.add_department"), name="dispatch")
     def post(self, request):
-        serializer = self.serializer_class(data=request.data)
+        data = request.data.copy()
+        # Auto-set company_id if not provided
+        if "company_id" not in data or not data.get("company_id"):
+            company_id = _get_effective_company_id(request)
+            if company_id is not None:
+                # Convert to list format for ManyToMany field
+                data["company_id"] = [company_id]
+        serializer = self.serializer_class(data=data)
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data, status=201)
@@ -216,14 +260,19 @@ class JobRoleView(APIView):
 
     @method_decorator(permission_required("base.view_jobrole"), name="dispatch")
     def get(self, request, pk=None):
+        company_id = _get_effective_company_id(request)
         if pk:
             job_role = object_check(JobRole, pk)
             if job_role is None:
+                return Response({"error": "Job role not found "}, status=404)
+            if company_id is not None and not job_role.company_id.filter(pk=company_id).exists():
                 return Response({"error": "Job role not found "}, status=404)
             serializer = self.serializer_class(job_role)
             return Response(serializer.data, status=200)
 
         job_roles = JobRole.objects.all()
+        if company_id is not None:
+            job_roles = job_roles.filter(company_id=company_id)
         paginator = PageNumberPagination()
         page = paginator.paginate_queryset(job_roles, request)
         serializer = self.serializer_class(page, many=True)
@@ -242,7 +291,14 @@ class JobRoleView(APIView):
 
     @method_decorator(permission_required("base.add_jobrole"), name="dispatch")
     def post(self, request):
-        serializer = self.serializer_class(data=request.data)
+        data = request.data.copy()
+        # Auto-set company_id if not provided
+        if "company_id" not in data or not data.get("company_id"):
+            company_id = _get_effective_company_id(request)
+            if company_id is not None:
+                # Convert to list format for ManyToMany field
+                data["company_id"] = [company_id]
+        serializer = self.serializer_class(data=data)
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data, status=201)
@@ -263,14 +319,19 @@ class CompanyView(APIView):
 
     @method_decorator(permission_required("base.view_company"), name="dispatch")
     def get(self, request, pk=None):
+        company_id = _get_effective_company_id(request)
         if pk:
             company = object_check(Company, pk)
             if company is None:
+                return Response({"error": "Company not found "}, status=404)
+            if company_id is not None and company.id != company_id:
                 return Response({"error": "Company not found "}, status=404)
             serializer = self.serializer_class(company)
             return Response(serializer.data, status=200)
 
         companies = Company.objects.all()
+        if company_id is not None:
+            companies = companies.filter(id=company_id)
         paginator = PageNumberPagination()
         page = paginator.paginate_queryset(companies, request)
         serializer = self.serializer_class(page, many=True)
@@ -487,14 +548,19 @@ class WorkTypeView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, pk=None):
+        company_id = _get_effective_company_id(request)
         if pk:
             work_type = object_check(WorkType, pk)
             if work_type is None:
+                return Response({"error": "WorkType not found"}, status=404)
+            if company_id is not None and not work_type.company_id.filter(pk=company_id).exists():
                 return Response({"error": "WorkType not found"}, status=404)
             serializer = self.serializer_class(work_type)
             return Response(serializer.data, status=200)
 
         work_types = WorkType.objects.all()
+        if company_id is not None:
+            work_types = work_types.filter(company_id=company_id)
         serializer = self.serializer_class(work_types, many=True)
         return Response(serializer.data)
 
@@ -861,14 +927,19 @@ class EmployeeShiftView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, pk=None):
+        company_id = _get_effective_company_id(request)
         if pk:
             employee_shift = object_check(EmployeeShift, pk)
             if employee_shift is None:
+                return Response({"error": "EmployeeShift not found"}, status=404)
+            if company_id is not None and not employee_shift.company_id.filter(pk=company_id).exists():
                 return Response({"error": "EmployeeShift not found"}, status=404)
             serializer = self.serializer_class(employee_shift)
             return Response(serializer.data, status=200)
 
         employee_shifts = EmployeeShift.objects.all()
+        if company_id is not None:
+            employee_shifts = employee_shifts.filter(company_id=company_id)
         serializer = self.serializer_class(employee_shifts, many=True)
         return Response(serializer.data, status=200)
 

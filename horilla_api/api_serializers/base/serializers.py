@@ -139,11 +139,45 @@ class JobPositionSerializer(serializers.ModelSerializer):
         model = JobPosition
         fields = "__all__"
 
+    def create(self, validated_data):
+        company_id = validated_data.pop("company_id", [])
+        obj = JobPosition(**validated_data)
+        obj.save()
+        if company_id:
+            obj.company_id.set(company_id)
+        return obj
+
+    def update(self, instance, validated_data):
+        company_id = validated_data.pop("company_id", None)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        if company_id is not None:
+            instance.company_id.set(company_id)
+        return instance
+
 
 class JobRoleSerializer(serializers.ModelSerializer):
     class Meta:
         model = JobRole
         fields = "__all__"
+
+    def create(self, validated_data):
+        company_id = validated_data.pop("company_id", [])
+        obj = JobRole(**validated_data)
+        obj.save()
+        if company_id:
+            obj.company_id.set(company_id)
+        return obj
+
+    def update(self, instance, validated_data):
+        company_id = validated_data.pop("company_id", None)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        if company_id is not None:
+            instance.company_id.set(company_id)
+        return instance
 
 
 

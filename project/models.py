@@ -232,8 +232,11 @@ class Project(HorillaModel):
         is_new, request = self.pk is None, getattr(
             horilla_middlewares._thread_locals, "request", None
         )
-        if is_new and (cid := request.session.get("selected_company")) and cid != "all":
-            self.company_id = Company.find(cid)
+        # Only set company_id from session if it's not already set (from API)
+        if is_new and not self.company_id and request:
+            cid = request.session.get("selected_company")
+            if cid and cid != "all":
+                self.company_id = Company.find(cid)
         super().save(*args, **kwargs)
         if is_new:
             ProjectStage.objects.create(

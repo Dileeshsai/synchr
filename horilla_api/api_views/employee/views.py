@@ -291,11 +291,17 @@ class DocumentRequestsMetaView(APIView):
         from employee.models import EmployeeWorkInformation
         from horilla_documents.models import Document as DocumentModel
 
-        # Employees visible to user (for employee filter dropdown + reporting manager dropdown)
+        # Employees visible to user (for employee filter dropdown + create/edit form)
         allowed_employees = Employee.objects.all()
         allowed_employees = filtersubordinatesemployeemodel(
             request, allowed_employees, "employee.view_employee"
         )
+        # Restrict to user's company when scoped (logged-in user under specific company)
+        company_id = _get_effective_company_id(request)
+        if company_id is not None:
+            allowed_employees = allowed_employees.filter(
+                employee_work_info__company_id=company_id
+            )
 
         employee_options = [
             {
@@ -313,10 +319,15 @@ class DocumentRequestsMetaView(APIView):
             .values_list("reporting_manager_id", flat=True)
             .distinct()
         )
-        reporting_managers = (
-            Employee.objects.filter(id__in=reporting_manager_ids)
-            .only("id", "badge_id", "employee_first_name", "employee_last_name")
-            .order_by("employee_first_name", "employee_last_name")
+        reporting_managers = Employee.objects.filter(
+            id__in=reporting_manager_ids
+        ).only("id", "badge_id", "employee_first_name", "employee_last_name")
+        if company_id is not None:
+            reporting_managers = reporting_managers.filter(
+                employee_work_info__company_id=company_id
+            )
+        reporting_managers = reporting_managers.order_by(
+            "employee_first_name", "employee_last_name"
         )
         reporting_manager_options = [
             {
@@ -626,6 +637,42 @@ def object_delete(cls, pk):
         return {"error": str(e)}, 400
 
 
+def _get_effective_company_id(request):
+    """
+    Resolve company ID for filtering (query param or logged-in user's company).
+    
+    Logic:
+    - If company_id query param is provided and not "all", use it
+    - If user is superuser/staff/admin (has permission to view all companies), return None (show all companies)
+    - Otherwise, return the logged-in employee's company_id
+    """
+    param = request.query_params.get("company_id")
+    if param and str(param).strip().lower() not in ("", "all"):
+        try:
+            return int(param)
+        except (TypeError, ValueError):
+            pass
+    
+    # Check if user is admin/superuser - they should see all companies
+    user = request.user
+    
+    # Superusers and staff always see all companies
+    if getattr(user, "is_superuser", False) or getattr(user, "is_staff", False):
+        return None  # Admin/superuser sees all companies
+    
+    # Check if user has permission to view all companies (admin-level permission)
+    # This allows users with admin roles but not superuser flag to see all companies
+    if user.has_perm("base.view_company"):
+        return None  # User with company view permission sees all companies
+    
+    # Regular employees: return their company_id
+    employee = getattr(user, "employee_get", None)
+    if employee and hasattr(employee, "get_company") and employee.get_company():
+        company = employee.get_company()
+        return company.id if getattr(company, "id", None) else None
+    return None
+
+
 class EmployeeTypeAPIView(APIView):
     """
     CRUD API for employee types.
@@ -642,14 +689,19 @@ class EmployeeTypeAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, pk=None):
+        company_id = _get_effective_company_id(request)
         if pk:
             employee_type = object_check(EmployeeType, pk)
             if employee_type is None:
                 return Response({"error": "EmployeeType not found"}, status=404)
+            if company_id is not None and not employee_type.company_id.filter(pk=company_id).exists():
+                return Response({"error": "EmployeeType not found"}, status=404)
             serializer = self.serializer_class(employee_type)
             return Response(serializer.data, status=200)
-        employee_type = EmployeeType.objects.all()
-        serializer = self.serializer_class(employee_type, many=True)
+        employee_types = EmployeeType.objects.all()
+        if company_id is not None:
+            employee_types = employee_types.filter(company_id=company_id)
+        serializer = self.serializer_class(employee_types, many=True)
         return Response(serializer.data, status=200)
 
     @method_decorator(permission_required("base.add_employeetype"), name="dispatch")
@@ -1071,7 +1123,11 @@ class EmployeeWorkInformationAPIView(APIView):
                             linked_user.email = effective_email
                             linked_user.username = effective_email
                             linked_user.save(update_fields=["email", "username"])
-                return Response(serializer.data)
+                # Re-serialize after refresh so read_only fields (e.g. company_name) are included
+                return Response(
+                    EmployeeWorkInformationSerializer(work_info).data,
+                    status=status.HTTP_200_OK,
+                )
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         return Response({"message": "No permission"}, status=400)
 
@@ -1665,16 +1721,26 @@ class DocumentRequestAPIView(APIView):
     def get(self, request, pk=None):
         if pk:
             document_request = self.get_object(pk)
+            # Check company access for detail view
+            company_id = _get_effective_company_id(request)
+            if company_id is not None:
+                # Verify at least one employee in the request belongs to the company
+                employee_companies = document_request.employee_id.values_list(
+                    'employee_work_info__company_id', flat=True
+                ).distinct()
+                if company_id not in employee_companies:
+                    return Response(
+                        {"error": "Document request not found"},
+                        status=status.HTTP_404_NOT_FOUND
+                    )
             serializer = DocumentRequestSerializer(document_request)
             return Response(serializer.data)
         else:
             document_requests = DocumentRequest.objects.all()
 
-            # Apply company filter from query parameter if provided (for frontend filtering)
-            # HorillaCompanyManager should already filter by session, but query param ensures it works
-            company_id = request.GET.get("employee_id__employee_work_info__company_id") or request.GET.get("companyId")
-            if company_id:
-                from django.db.models import Q
+            # Apply company filter using effective company ID
+            company_id = _get_effective_company_id(request)
+            if company_id is not None:
                 # Filter document requests where at least one assigned employee belongs to the company
                 document_requests = document_requests.filter(
                     employee_id__employee_work_info__company_id=company_id
@@ -2928,14 +2994,20 @@ class EmployeeDashboardAPIView(APIView):
     def get(self, request):
         user = request.user
         employee = user.employee_get
-        
-        # Get user's role and employees
+        company_id = request.query_params.get('company_id')
+
+        # Get user's role and employees (scoped by company when applicable)
         user_role = self.get_user_role(user, employee)
-        employees = self.get_employees_by_role(user, employee, user_role)
-        
+        employees = self.get_employees_by_role(user, employee, user_role, company_id=company_id)
+
         # Get dashboard data based on role
         dashboard_data = self.get_dashboard_data(user, employee, user_role, employees)
-        
+        # Attach current user's position (real API usage for dashboard)
+        job_position = None
+        if employee and hasattr(employee, 'get_job_position') and employee.get_job_position():
+            job_position = employee.get_job_position().job_position
+        dashboard_data["job_position"] = job_position
+
         return Response(dashboard_data, status=200)
     
     def get_user_role(self, user, employee):
@@ -2975,15 +3047,26 @@ class EmployeeDashboardAPIView(APIView):
             return "TEAM_MANAGER"
         
         return "EMPLOYEE"
-    
-    def get_employees_by_role(self, user, employee, role):
+
+    def get_employees_by_role(self, user, employee, role, company_id=None):
         """
-        Get employees based on user's role
+        Get employees based on user's role, scoped by company when applicable.
+        - SUPERUSER/ADMIN: if company_id is provided, filter by that company; else all.
+        - CEO: always filter by the logged-in employee's company.
         """
-        if role == "SUPERUSER" or role == "ADMIN" or role == "CEO":
-            # Superuser/Admin/CEO can see all employees
-            return Employee.objects.filter(is_active=True)
-        elif role == "DEPARTMENT_MANAGER":
+        if role == "SUPERUSER" or role == "ADMIN":
+            qs = Employee.objects.filter(is_active=True)
+            if company_id:
+                qs = qs.filter(employee_work_info__company_id=company_id)
+            return qs
+        if role == "CEO":
+            company = employee.get_company() if employee else None
+            if not company:
+                return Employee.objects.none()
+            return Employee.objects.filter(
+                employee_work_info__company_id=company, is_active=True
+            )
+        if role == "DEPARTMENT_MANAGER":
             # Department manager sees employees in their department
             if hasattr(employee, 'employee_work_info') and employee.employee_work_info:
                 dept = employee.employee_work_info.department_id

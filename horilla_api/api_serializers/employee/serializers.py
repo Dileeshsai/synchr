@@ -119,7 +119,12 @@ class EmployeeWorkInformationSerializer(serializers.ModelSerializer):
     work_type_name = serializers.CharField(
         source="work_type_id.work_type", read_only=True
     )
-    company_name = serializers.CharField(source="company_id.company", read_only=True)
+    company_name = serializers.SerializerMethodField()
+
+    def get_company_name(self, obj):
+        company = getattr(obj, "company_id", None)
+        return getattr(company, "company", None) if company else None
+
     tags = serializers.SerializerMethodField()
 
     def get_tags(self, obj):
