@@ -1,16 +1,19 @@
 import calendar
 import datetime
+import logging
 
 import pandas as pd
 from django.db.models import ProtectedError, Q
 from django.http import HttpResponse
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import status
+from rest_framework.exceptions import ValidationError
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from base.models import Company
 from project.filters import ProjectFilter, TaskAllFilter, TimeSheetFilter
 from project.models import Employee, Project, ProjectStage, Task, TimeSheet
 
@@ -21,6 +24,55 @@ from ...api_serializers.project.serializers import (
     TaskSerializer,
     TimeSheetSerializer,
 )
+
+
+def resolve_project_company_id(request, data=None):
+    """
+    Resolve company_id for project creation (used by POST and import).
+    Returns int or None. Raises ValidationError for non-superuser when employee/company missing.
+    """
+    data = data or {}
+    logger = logging.getLogger(__name__)
+    employee = getattr(request.user, "employee_get", None)
+    if employee is None and request.user and getattr(request.user, "is_authenticated", True):
+        try:
+            employee = (
+                Employee.objects.select_related("employee_work_info")
+                .filter(employee_user_id=request.user)
+                .first()
+            )
+        except Exception:
+            employee = None
+    work_info = getattr(employee, "employee_work_info", None) if employee else None
+    company_id_val = getattr(work_info, "company_id", None) if work_info else None
+    emp_company_id = getattr(company_id_val, "id", None) if company_id_val is not None else None
+
+    if not request.user.is_superuser:
+        if employee is None or work_info is None or emp_company_id is None:
+            raise ValidationError({"company_id": "Employee work info or company not configured."})
+        logger.info("Resolved company from employee: %s", emp_company_id)
+        return emp_company_id
+
+    resolved = None
+    for source in (data.get("company_id"), request.query_params.get("company_id")):
+        if source is not None and str(source).strip().lower() not in ("", "all"):
+            try:
+                resolved = int(source)
+                break
+            except (TypeError, ValueError):
+                pass
+    if resolved is None:
+        selected = request.session.get("selected_company")
+        if selected and str(selected).strip().lower() != "all":
+            try:
+                resolved = int(selected)
+            except (TypeError, ValueError):
+                pass
+    if resolved is None:
+        resolved = emp_company_id
+        if emp_company_id is not None:
+            logger.info("Resolved company from employee: %s", emp_company_id)
+    return resolved
 
 
 def _get_effective_company_id(request):
@@ -307,55 +359,52 @@ class ProjectAPIView(APIView):
 
     def _get_filtered_queryset(self, request):
         """
-        Returns queryset filtered by role and company membership.
-        - Superusers: respect navbar company switcher (selected_company in session).
-          If selected_company == "all" -> all projects; if specific company ID -> only that company's projects.
-        - Regular employees: projects from their company OR projects where they are manager/member (unchanged).
+        Strict company-based filtering for multi-tenant isolation.
+        - Superuser: filter by selected_company (session or query) or show all.
+        - Non-superuser: filter by employee.employee_work_info.company_id only (no manager/member listing).
         """
         queryset = Project.objects.select_related("company_id").prefetch_related(
             "managers", "members"
         ).order_by("-id")
 
-        # Superusers: scope by selected company from navbar
-        # Check both query param (React frontend) and session (Django UI)
+        selected_company = request.session.get("selected_company")
+
         if request.user.is_superuser:
-            # Priority 1: Query parameter (React frontend sends companyId as company_id)
+            # Query param (React) takes precedence, then session (Django UI navbar)
             company_id_param = request.query_params.get("company_id")
             if company_id_param and str(company_id_param).strip().lower() not in ("", "all"):
                 try:
                     cid = int(company_id_param)
-                    queryset = queryset.filter(company_id_id=cid)
-                    return queryset
+                    return queryset.filter(company_id_id=cid)
                 except (TypeError, ValueError):
-                    pass  # invalid value: fallback to session
-            
-            # Priority 2: Session (Django UI navbar switcher)
-            selected_company = request.session.get("selected_company")
-            if selected_company and selected_company != "all":
+                    pass
+            if selected_company and str(selected_company).strip().lower() != "all":
                 try:
                     cid = int(selected_company)
-                    queryset = queryset.filter(company_id_id=cid)
+                    return queryset.filter(company_id_id=cid)
                 except (TypeError, ValueError):
-                    pass  # invalid value: show all
-            
-            # If both are "all" or missing -> return all projects (unchanged queryset)
+                    pass
             return queryset
 
-        # Non-superuser: existing employee company + manager/member filtering (unchanged)
+        # Non-superuser: STRICT company filter from employee only (no managers/members for listing)
         employee = getattr(request.user, "employee_get", None)
+        if employee is None and request.user and getattr(request.user, "is_authenticated", True):
+            try:
+                employee = (
+                    Employee.objects.select_related("employee_work_info")
+                    .filter(employee_user_id=request.user)
+                    .first()
+                )
+            except Exception:
+                employee = None
         if not employee:
             return Project.objects.none()
-
         company = None
         if hasattr(employee, "employee_work_info") and employee.employee_work_info:
             company = employee.employee_work_info.company_id
-
-        filter_conditions = Q()
-        if company:
-            filter_conditions |= Q(company_id=company)
-        filter_conditions |= Q(managers=employee) | Q(members=employee)
-
-        return queryset.filter(filter_conditions).distinct()
+        if not company:
+            return Project.objects.none()
+        return queryset.filter(company_id=company)
 
     def get(self, request, pk=None):
         # Detail view
@@ -415,18 +464,34 @@ class ProjectAPIView(APIView):
         serializer = ProjectSerializer(page, many=True)
         return paginator.get_paginated_response(serializer.data)
 
+    def _resolve_project_company_id(self, request, data):
+        """Resolve company_id for project creation; delegates to module-level resolver."""
+        return resolve_project_company_id(request, data)
+
     def post(self, request):
         data = request.data.copy()
-        # Auto-set company_id if not provided
-        if "company_id" not in data or not data.get("company_id"):
-            company_id = _get_effective_company_id(request)
-            if company_id is not None:
-                data["company_id"] = company_id
+
+        # Resolve company first (for JWT/React stateless flow)
+        resolved_company_id = self._resolve_project_company_id(request, data)
+
+        if not resolved_company_id:
+            raise ValidationError({"company_id": "Unable to resolve company for this user."})
+
+        # FORCE inject company_id before serializer (backend is source of truth; company_id not required from frontend)
+        data["company_id"] = resolved_company_id
+
+        logger = logging.getLogger(__name__)
+        logger.info("Resolved company_id BEFORE save: %s", resolved_company_id)
+
         serializer = ProjectSerializer(data=data)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        serializer.is_valid(raise_exception=True)
+        instance = serializer.save()
+
+        if not instance.company_id:
+            instance.company_id = Company.objects.get(id=resolved_company_id)
+            instance.save(update_fields=["company_id"])
+
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     def put(self, request, pk):
         try:
@@ -561,6 +626,17 @@ class ProjectImportAPIView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        try:
+            resolved_company_id = resolve_project_company_id(request)
+        except ValidationError as e:
+            return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
+        if not resolved_company_id:
+            return Response(
+                {"detail": "Unable to resolve company for import."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        company_obj = Company.objects.get(id=resolved_company_id)
+
         from project.views import convert_nan  # reuse existing helper
 
         project_dicts = data_frame.to_dict("records")
@@ -655,6 +731,7 @@ class ProjectImportAPIView(APIView):
 
                 if is_save:
                     project_obj, _ = Project.objects.get_or_create(title=title)
+                    project_obj.company_id = company_obj
                     project_obj.status = status_value
                     project_obj.start_date = (
                         start_date.date() if hasattr(start_date, "date") else start_date

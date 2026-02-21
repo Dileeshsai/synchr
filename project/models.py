@@ -229,6 +229,8 @@ class Project(HorillaModel):
                 self.status = "expired"
 
     def save(self, *args, **kwargs):
+        if not self.company_id:
+            raise ValueError("Project must have a company assigned before saving")
         is_new, request = self.pk is None, getattr(
             horilla_middlewares._thread_locals, "request", None
         )

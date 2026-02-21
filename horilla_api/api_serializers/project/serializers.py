@@ -1,4 +1,6 @@
 from rest_framework import serializers
+
+from base.models import Company
 from project.models import Project, ProjectStage, Task, TimeSheet
 
 
@@ -6,7 +8,11 @@ class ProjectSerializer(serializers.ModelSerializer):
     company_name = serializers.CharField(
         source="company_id.company", read_only=True
     )
-    
+    # Model has company_id editable=False so DRF treats it read_only; override so API can set it
+    company_id = serializers.PrimaryKeyRelatedField(
+        queryset=Company.objects.all(), required=False, allow_null=True
+    )
+
     class Meta:
         model = Project
         fields = "__all__"
