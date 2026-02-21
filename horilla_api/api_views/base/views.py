@@ -566,7 +566,11 @@ class WorkTypeView(APIView):
 
     @method_decorator(permission_required("base.add_worktype"), name="dispatch")
     def post(self, request):
-        serializer = self.serializer_class(data=request.data)
+        data = request.data.copy()
+        company_id = _get_effective_company_id(request)
+        if company_id is not None:
+            data["company_id"] = [company_id]
+        serializer = self.serializer_class(data=data)
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data, status=200)

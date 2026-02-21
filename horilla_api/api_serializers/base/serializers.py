@@ -201,8 +201,11 @@ class WorkTypeSerializer(serializers.ModelSerializer):
         fields = "__all__"
 
     def validate(self, attrs):
-        # Create an instance of the model with the provided data
-        instance = WorkType(**attrs)
+        # ManyToMany fields cannot be passed to Model(**kwargs); exclude them
+        # when building a temporary instance for clean().
+        m2m_names = {f.name for f in WorkType._meta.many_to_many}
+        attrs_for_instance = {k: v for k, v in attrs.items() if k not in m2m_names}
+        instance = WorkType(**attrs_for_instance)
 
         # Call the model's clean method for validation
         try:
