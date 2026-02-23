@@ -264,7 +264,14 @@ def self_info_update(request):
         face_detection = EmployeeFaceDetection.objects.get(employee_id=employee)
     except:
         pass
-    
+
+    # Check if face recognition library is available (for UI warning)
+    try:
+        from facedetection.face_recognition_utils import HAS_FACE_RECOGNITION
+        has_face_recognition = HAS_FACE_RECOGNITION
+    except Exception:
+        has_face_recognition = False
+
     if request.POST:
         if request.POST.get("employee_first_name") is not None:
             instance = Employee.objects.filter(employee_user_id=request.user).first()
@@ -291,6 +298,7 @@ def self_info_update(request):
             "form": form,
             "bank_form": bank_form,
             "face_detection": face_detection,
+            "has_face_recognition": has_face_recognition,
         },
     )
 

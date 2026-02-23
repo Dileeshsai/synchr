@@ -28,11 +28,11 @@ django-storages
 django-widget-tweaks
 djangorestframework
 djangorestframework-simplejwt
-# Face recognition (optional): dlib builds fail on Windows - install separately, see below.
-dlib>=19.24.1
+# Face recognition (optional): do NOT uncomment on Windows - use scripts/install_face_recognition_windows.ps1 instead.
+# dlib>=19.24.1
 drf-yasg
 et-xmlfile
-face_recognition>=1.3.0
+# face_recognition>=1.3.0
 geopy
 google-api-python-client
 google-cloud-storage==3.0.0
