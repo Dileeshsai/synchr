@@ -1,9 +1,11 @@
 import base64
+import mimetypes
 import tempfile
 import os
 import logging
 import warnings
 from datetime import datetime, date
+from django.http import FileResponse
 from django.shortcuts import get_object_or_404
 from django.db.models import Q
 from rest_framework import status
@@ -174,7 +176,7 @@ class EmployeeFaceDetectionGetPostAPIView(APIView):
             paginator = self.pagination_class()
             page = paginator.paginate_queryset(face_records, request)
             
-            serializer = EmployeeFaceDetectionSerializer(page, many=True)
+            serializer = EmployeeFaceDetectionSerializer(page, many=True, context={'request': request})
             return paginator.get_paginated_response(serializer.data)
             
         except Exception as e:
@@ -214,7 +216,7 @@ class EmployeeFaceDetectionGetPostAPIView(APIView):
                     face_record = EmployeeFaceDetection.objects.get(
                         employee_id=employee
                     )
-                    response_serializer = EmployeeFaceDetectionSerializer(face_record)
+                    response_serializer = EmployeeFaceDetectionSerializer(face_record, context={'request': request})
                     
                     return Response({
                         "success": True,
@@ -609,7 +611,7 @@ class EmployeeFaceDetectionDetailAPIView(APIView):
                     status=status.HTTP_403_FORBIDDEN
                 )
             
-            serializer = EmployeeFaceDetectionSerializer(face_record)
+            serializer = EmployeeFaceDetectionSerializer(face_record, context={'request': request})
             return Response(serializer.data, status=status.HTTP_200_OK)
             
         except Exception as e:
@@ -648,7 +650,7 @@ class EmployeeFaceDetectionDetailAPIView(APIView):
                 )
             
             serializer = EmployeeFaceDetectionSerializer(
-                face_record, data=request.data, partial=True
+                face_record, data=request.data, partial=True, context={'request': request}
             )
             
             if serializer.is_valid():
@@ -704,6 +706,31 @@ class EmployeeFaceDetectionDetailAPIView(APIView):
                 {"error": "Failed to delete face detection record"}, 
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def current_user_face_image(request):
+    """
+    Serve the current user's registered face image (authenticated).
+    Use this for img src so the image loads with the same auth as API calls.
+    Returns 404 if no face image is registered.
+    """
+    if not getattr(request.user, 'employee_get', None):
+        return Response({"error": "No employee profile"}, status=status.HTTP_404_NOT_FOUND)
+    try:
+        face_record = EmployeeFaceDetection.objects.get(employee_id=request.user.employee_get)
+    except EmployeeFaceDetection.DoesNotExist:
+        return Response({"error": "No face image registered"}, status=status.HTTP_404_NOT_FOUND)
+    if not face_record.image:
+        return Response({"error": "No face image file"}, status=status.HTTP_404_NOT_FOUND)
+    try:
+        content_type, _ = mimetypes.guess_type(face_record.image.name) or ('image/jpeg', None)
+        f = face_record.image.open('rb')
+        return FileResponse(f, content_type=content_type or 'image/jpeg', as_attachment=False)
+    except Exception as e:
+        logger.exception("Error serving face image: %s", e)
+        return Response({"error": "Failed to serve image"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['POST'])

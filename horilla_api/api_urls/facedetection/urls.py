@@ -8,6 +8,7 @@ from ...api_views.facedetection.views import (
     BulkFaceRegistrationAPIView,
     FaceRecognitionStatsAPIView,
     EmployeeFaceDetectionDetailAPIView,
+    current_user_face_image,
     quick_face_checkin,
     quick_face_checkout,
 )
@@ -15,6 +16,9 @@ from ...api_views.facedetection.views import (
 urlpatterns = [
     # Face Detection Configuration
     path('config/', FaceDetectionConfigAPIView.as_view(), name='face-detection-config'),
+    
+    # Current user's face image (authenticated; use for img display)
+    path('me/face-image/', current_user_face_image, name='current-user-face-image'),
     
     # Employee Face Detection Records
     path('employees/', EmployeeFaceDetectionGetPostAPIView.as_view(), name='employee-face-detection-list'),

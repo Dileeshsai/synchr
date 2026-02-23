@@ -20,7 +20,8 @@ class FaceDetectionSerializer(serializers.ModelSerializer):
 
 class EmployeeFaceDetectionSerializer(serializers.ModelSerializer):
     """
-    Serializer for EmployeeFaceDetection model
+    Serializer for EmployeeFaceDetection model.
+    Returns absolute image URL when request is available (so React/other clients can load the image).
     """
     employee_name = serializers.CharField(source='employee_id.get_full_name', read_only=True)
     employee_id_number = serializers.CharField(source='employee_id.employee_id', read_only=True)
@@ -33,6 +34,14 @@ class EmployeeFaceDetectionSerializer(serializers.ModelSerializer):
             'company_name', 'image'
         ]
         read_only_fields = ['id']
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        request = self.context.get('request')
+        if request and data.get('image'):
+            # Return absolute URL so frontend (different origin) can load the image
+            data['image'] = request.build_absolute_uri(instance.image.url)
+        return data
 
 
 class FaceRegistrationSerializer(serializers.Serializer):
