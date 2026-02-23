@@ -29,8 +29,8 @@ env = environ.Env(
         str,
         "django-insecure-j8op9)1q8$1&0^s&p*_0%d#pr@w9qj@1o=3#@d=a(^@9@zd@%j",
     ),
-    ALLOWED_HOSTS=(list, ["*"]),
-    CSRF_TRUSTED_ORIGINS=(list, ["http://localhost:8000", "http://192.168.0.5:8000", "http://124.123.127.160", "http://192.168.0.171:5174"]),
+    ALLOWED_HOSTS=(list, ["*", "https://api.synchrm.com"]),
+    CSRF_TRUSTED_ORIGINS=(list, ["http://localhost:8000", "http://192.168.0.5:8000", "http://124.123.127.160", "http://192.168.0.171:5174", "https://api.synchrm.com"]),
     FRONTEND_URL=(str, "http://localhost:5173"),
 )
 
@@ -208,7 +208,8 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:8000",
     "http://127.0.0.1:8000",
     "https://app.synchrm.com",
-    "http://192.168.2.171:8000",  # Production domain
+    "http://192.168.2.171:8000", 
+    "https://api.synchrm.com" # Production domain
 ]
 
 CORS_ALLOW_ALL_ORIGINS = True  # Allow all origins for development and mobile APK
@@ -337,13 +338,13 @@ if not DEBUG:
     CORS_ALLOW_ALL_ORIGINS = False  # Restrict origins in production
     CORS_ALLOWED_ORIGINS = [
         "https://app.synchrm.com",
-        "https://www.synchrm.com",
+        "https://api.synchrm.com",
     ]
     
     # Production CSRF settings
     CSRF_TRUSTED_ORIGINS = [
         "https://app.synchrm.com",
-        "https://www.synchrm.com",
+        "https://api.synchrm.com",
     ]
 
 # Mobile app specific settings
