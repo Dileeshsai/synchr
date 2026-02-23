@@ -29,8 +29,9 @@ env = environ.Env(
         str,
         "django-insecure-j8op9)1q8$1&0^s&p*_0%d#pr@w9qj@1o=3#@d=a(^@9@zd@%j",
     ),
-    ALLOWED_HOSTS=(list, ["*", "https://api.synchrm.com"]),
-    CSRF_TRUSTED_ORIGINS=(list, ["http://localhost:8000", "http://192.168.0.5:8000", "http://124.123.127.160", "http://192.168.0.171:5174", "https://api.synchrm.com"]),
+    # ALLOWED_HOSTS: hostnames only (no scheme); e.g. api.synchrm.com, 103.154.233.210
+    ALLOWED_HOSTS=(list, ["*", "api.synchrm.com", "103.154.233.210"]),
+    CSRF_TRUSTED_ORIGINS=(list, ["http://localhost:8000", "http://192.168.0.5:8000", "http://124.123.127.160", "http://192.168.0.171:5174", "https://api.synchrm.com", "https://app.synchrm.com"]),
     FRONTEND_URL=(str, "http://localhost:5173"),
 )
 
